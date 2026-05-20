@@ -67,9 +67,23 @@ Once recording is running, you control it with these keys in the Terminal window
 | `S` | Stop the current segment, save it, switch to PAUSE |
 | `R` | Restart — save current segment and begin a new one |
 | `Q` | Save the current segment and quit |
+| `P` | Toggle PLAYLIST-ONLY mode (song log only, no M4A file) |
+| `A` | Toggle AUTOGAIN (AUTO ↔ MANUAL) |
+| `2` `4` `6` `8` `0` | In MANUAL mode: set input gain to 20 / 40 / 60 / 80 / 100 % |
 | `Ctrl+C` | Emergency stop (segment is saved where possible) |
 
 When the set recording duration is reached, simplerec **automatically saves the file and starts a new recording** with the same settings — it never stops on its own.
+
+### Auto-gain
+
+simplerec controls the macOS system input gain automatically while recording:
+
+- **Very weak signal** (< −50 dBFS for a few seconds) → input gain raised to **100 %**
+- **Weak signal** (< −35 dBFS for a few seconds) → input gain raised to **80 %**
+- **Clipping danger** (peak ≥ −2 dBFS or active clipping) → input gain reduced in 20 %-steps (minimum 20 %)
+- Every gain change is recorded as a `CLIP-ADJUST` line in the playlist file with timestamp
+- A 5×50 dot-grid in the UI shows the last 10 minutes of gain history (rows = 20 % gain buckets; colours: 100 % red, 80 % bright red, 60 % yellow, 40 / 20 % green)
+- Press `A` to switch to **MANUAL** mode and pick a fixed gain with the number keys; press `A` again to return to AUTO
 
 ---
 
@@ -80,13 +94,17 @@ All files are saved to the folder you selected during setup.
 | File | Description |
 |------|-------------|
 | `[prefix]YYYYMMDD-startHHMM-endHHMM.m4a` | Audio recording segment |
-| `[prefix]current_song_YYYYMMDD-HHMM.txt` | Song log for the session |
+| `[prefix]YYYYMMDD-startHHMM-endHHMM.txt`  | Playlist for that segment (CSV-style: time;elapsed;artist;title;genre;year) |
+
+While a segment is in progress, a temporary live-status file `[prefix]current_song_YYYYMMDD-HHMM.txt` exists and is updated continuously. It is **removed automatically** as soon as the segment is saved — only the per-segment playlist `.txt` and `.m4a` files remain.
 
 **Example** with prefix `Party2026_` and a recording started at 10:30:
 ```
 Party2026_20260520-start1030-end1130.m4a
-Party2026_current_song_20260520-1030.txt
+Party2026_20260520-start1030-end1130.txt
 ```
+
+In **PLAYLIST-ONLY** mode (`P`) no audio file is written, only the playlist `.txt`.
 
 ---
 
@@ -105,21 +123,31 @@ simplerec is a command-line audio recorder for macOS with the following built-in
 - Full-screen terminal UI that refreshes in real time
 - Stereo VU meter with peak-hold indicators and colour coding (green → yellow → red)
 - Clipping warning with event counter
+- Dedicated **Auto-gain** box with a 5×50 dot-grid showing the last 10 minutes of input-gain history
 - Live display of elapsed recording time, channel count, device name, and output folder
 - Status line shows `● REC` (red) or `‖ PAUSE` (amber) at a glance
+- Two key-bars at the bottom: transport keys (S/R/Q/P) and gain controls (A/2/4/6/8/0)
+
+**Auto-gain (macOS system input volume)**
+- Continuously monitors the input level while recording
+- Boosts the system input gain to 100 % when the signal is very weak, 80 % when weak
+- Reduces gain in 20 %-steps when clipping danger is detected (min 20 %)
+- Logs every adjustment as a `CLIP-ADJUST` entry in the playlist file (with timestamp)
+- Can be toggled off with `A`; in MANUAL mode the keys `2 4 6 8 0` set the gain to 20–100 %
 
 **Song recognition**
 - Integrated Shazam-based song recognition via ShazamIO
-- Runs continuously in the background — every 25 seconds a short audio snippet is analysed
-- Displays the currently playing song (artist and title) in the terminal
-- Writes a timestamped song log file (`current_song_YYYYMMDD-HHMM.txt`) alongside the recording
+- Runs continuously in the background — every few seconds a short audio snippet is analysed
+- Displays the currently playing song (artist, title, genre, year, album) in the terminal
+- Maintains a deduplicated per-segment playlist file (skips repeats of the same song)
 - Requires an active internet connection; if the connection is unavailable the recognition retries silently without interrupting recording
 
 **Session management**
 - Asks for recording duration (1–120 min) and a filename prefix at startup
 - Automatically saves the current segment and starts a new one when the duration is reached
-- Each new session gets its own song log file with a fresh timestamp
-- All output files — audio and song log — are saved to the same folder
+- Each segment produces its own `.m4a` audio file and matching `.txt` playlist file
+- The live `current_song_*.txt` status file is auto-deleted after each segment is saved
+- All output files are saved to the same folder
 
 **Notes**
 - Requires macOS (uses the built-in `afconvert` tool for M4A encoding)
