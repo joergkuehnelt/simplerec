@@ -627,7 +627,7 @@ class RecorderState:
             self.current_temp_name = tmp_name
             self.segment_start_wall = start_wall
             self.segment_start_monotonic = time.monotonic()
-            self.playlist_path = self.output_dir / f".{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.playlist.txt"
+            self.playlist_path = self.output_dir / f"{self.filename_prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.playlist.txt"
             self.playlist_last_tagid = ""
             self.playlist_last_was_empty = False
         try:
@@ -799,7 +799,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(f"{AMBER}{BOLD}Song:{RESET} {GREEN}{BOLD}{_trunc(song_artist + ' - ' + song_title, 74)}{RESET}")
     meta_parts = [p for p in [song_genre, song_year, song_album] if p]
     meta_txt = "  ·  ".join(meta_parts)
-    print(f"{DIM}     {_trunc(meta_txt, 74) if meta_txt else '-'}{RESET}")
+    print(f"{AMBER}Info :{RESET} {GREEN}{BOLD}{_trunc(meta_txt, 72) if meta_txt else '-'}{RESET}")
     print(f"{DIM}Check: {song_last_check}  Match: {song_last_match}  Next: {countdown:2d}s{shazam_ok_txt}{RESET}")
     print(f"{DIM}List : {_trunc(str(outdir / song_fname), 73)}{RESET}")
     print()
