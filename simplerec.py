@@ -201,6 +201,30 @@ def default_output_dir() -> Path:
     return Path.home() / "Music" / "Recordings"
 
 
+def ask_recording_minutes() -> int:
+    print("\nRecording Duration")
+    print("------------------")
+    while True:
+        raw = input("How many minutes to record? (1–120): ").strip()
+        if raw.isdigit():
+            val = int(raw)
+            if 1 <= val <= 120:
+                return val
+        print("Please enter a number between 1 and 120.")
+
+
+def ask_filename_prefix() -> str:
+    print("\nFilename Prefix")
+    print("---------------")
+    print("This prefix will be added to all recording files and the song-log.")
+    print("Leave empty to use no prefix.")
+    raw = input("Prefix (e.g. 'Party2026_'): ").strip()
+    # sanitise: keep only safe characters for filenames
+    safe = "".join(c for c in raw if c.isalnum() or c in "_-. ")
+    safe = safe.replace(" ", "_")
+    return safe
+
+
 def choose_output_dir() -> Path:
     suggested = default_output_dir().expanduser()
     print("\nOutput Folder")
@@ -304,13 +328,17 @@ class RecorderState:
     songrec_current_artist: str = "-"
     songrec_status: str = "not started"
     songrec_total_checks: int = 0
+    filename_prefix: str = ""
+    max_record_seconds: Optional[float] = None
+    session_start_monotonic: Optional[float] = None
 
     def __post_init__(self):
         blocks = int(math.ceil((SONGREC_WINDOW_SECONDS * self.samplerate) / BLOCKSIZE)) + 2
         self.recent_blocks = deque(maxlen=max(4, blocks))
 
     def write_song_status_file(self):
-        path = self.output_dir / SONGREC_STATUS_FILE
+        fname = (self.filename_prefix + SONGREC_STATUS_FILE) if self.filename_prefix else SONGREC_STATUS_FILE
+        path = self.output_dir / fname
         with self.lock:
             last_check = self.songrec_last_check.strftime("%Y-%m-%d %H:%M:%S") if self.songrec_last_check else "-"
             last_match = self.songrec_last_match.strftime("%Y-%m-%d %H:%M:%S") if self.songrec_last_match else "-"
@@ -498,6 +526,8 @@ class RecorderState:
             if self.current_file is not None:
                 return
             start_wall = dt.datetime.now()
+            if self.session_start_monotonic is None:
+                self.session_start_monotonic = time.monotonic()
             tmp_name = temp_wav_name(self.output_dir, start_wall)
             self.current_file = sf.SoundFile(str(tmp_name), mode="w", samplerate=self.samplerate, channels=self.channels, subtype="PCM_16")
             self.current_temp_name = tmp_name
@@ -527,7 +557,8 @@ class RecorderState:
             self.segment_start_wall = None
         if tmp_name is None or start_wall is None:
             return None
-        final_name = m4a_final_name(self.output_dir, start_wall, end_wall)
+        prefix = self.filename_prefix
+        final_name = self.output_dir / f"{prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M}-end{end_wall:%H%M}.m4a"
         if final_name.exists():
             final_name = final_name.with_name(final_name.stem + dt.datetime.now().strftime("-%H%M%S") + final_name.suffix)
         self.convert_q.put((tmp_name, final_name))
@@ -636,6 +667,8 @@ def main():
     print("macOS CLI Audio Recorder (.m4a, Stereo, Song Recognition)\n")
     print("Tip: run with --help or --help-messages for usage information.\n")
     output_dir = choose_output_dir()
+    max_minutes = ask_recording_minutes()
+    filename_prefix = ask_filename_prefix()
     device_index, samplerate, channels, device_name = select_input_device()
     print(f"\nSelected: {device_name} (sd-index={device_index})")
     print(f"Output folder: {output_dir}")
@@ -645,7 +678,14 @@ def main():
     print("Starting stream …")
     time.sleep(0.4)
 
-    state = RecorderState(device_index=device_index, samplerate=samplerate, channels=channels, output_dir=output_dir)
+    state = RecorderState(
+        device_index=device_index,
+        samplerate=samplerate,
+        channels=channels,
+        output_dir=output_dir,
+        filename_prefix=filename_prefix,
+        max_record_seconds=max_minutes * 60.0,
+    )
     state.start_writer()
     state.start_converter()
     state.start_stream()
@@ -667,6 +707,19 @@ def main():
                     if saved:
                         print(f"\n{AMBER}Segment saved (conversion in background): {saved.name}{RESET}")
                     state.start_segment()
+                # auto-stop when user-defined duration is reached
+                if (
+                    state.max_record_seconds is not None
+                    and state.session_start_monotonic is not None
+                    and time.monotonic() - state.session_start_monotonic >= state.max_record_seconds
+                ):
+                    if state.mode == "recording":
+                        saved = state.stop_and_save()
+                        if saved:
+                            print(f"\n{AMBER}Recording limit reached – saving: {saved.name}{RESET}")
+                    with state.lock:
+                        state.mode = "quitting"
+                    break
                 key = keys.get_key()
                 if key == "s":
                     if state.mode == "recording":
