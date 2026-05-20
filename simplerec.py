@@ -590,6 +590,12 @@ class RecorderState:
                             self.songrec_current_album = meta.get("album", "")
                             self.songrec_current_year  = meta.get("year", "")
                             self.songrec_last_match = now
+                        else:
+                            self.songrec_current_title = "-"
+                            self.songrec_current_artist = "-"
+                            self.songrec_current_genre = ""
+                            self.songrec_current_album = ""
+                            self.songrec_current_year  = ""
                     self.write_song_status_file()
                     self.append_to_playlist(title, artist, tagid or "", now, elapsed_at_check,
                                             meta.get("genre", ""), meta.get("year", ""))
