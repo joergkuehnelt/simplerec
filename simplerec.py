@@ -68,6 +68,9 @@ AUTO_GAIN_TARGET        = 80    # % to set when auto-adjusting macOS input gain
 AUTO_GAIN_COOLDOWN      = 6.0   # seconds between consecutive adjustments
 AUTO_GAIN_WEAK_DB       = -35.0 # dBFS – signal considered too weak below this
 AUTO_GAIN_WEAK_HOLD     = 4.0   # seconds of weak signal before raising gain
+GAIN_POLL_SECONDS       = 5.0   # how often to read current input gain
+GAIN_HISTORY_SECONDS    = 600   # 10 min window for gain history graph
+GAIN_HISTORY_MAX        = 256   # max samples kept in history deque
 SONGREC_WINDOW_SECONDS = 5
 SONGREC_INTERVAL_SECONDS = 15
 SONGREC_TEMP_SNIPPET = ".songrec_snippet.wav"
@@ -369,6 +372,9 @@ class RecorderState:
     gain_last_adjust: float = 0.0
     gain_weak_since: Optional[float] = None
     gain_last_action: str = ""  # for UI display
+    gain_history: deque = field(default_factory=lambda: deque(maxlen=GAIN_HISTORY_MAX))
+    gain_current_pct: Optional[int] = None
+    gain_last_poll: float = 0.0
     stream: Optional[sd.InputStream] = None
     writer_q: queue.Queue = field(default_factory=queue.Queue)
     writer_stop: threading.Event = field(default_factory=threading.Event)
@@ -595,6 +601,19 @@ class RecorderState:
             if self.mode == "recording" and self.current_file is not None:
                 self.writer_q.put(indata.copy())
 
+    def poll_gain(self) -> None:
+        """Read current macOS input gain every GAIN_POLL_SECONDS and append to history."""
+        now = time.monotonic()
+        if now - self.gain_last_poll < GAIN_POLL_SECONDS:
+            return
+        self.gain_last_poll = now
+        pct = _get_input_gain()
+        if pct is None:
+            return
+        self.gain_current_pct = pct
+        with self.lock:
+            self.gain_history.append((now, pct))
+
     def check_auto_gain(self) -> None:
         """Raise or lower macOS input gain to AUTO_GAIN_TARGET if level is bad."""
         now = time.monotonic()
@@ -611,8 +630,10 @@ class RecorderState:
             _set_input_gain(AUTO_GAIN_TARGET)
             self.gain_last_adjust = now
             self.gain_weak_since = None
+            self.gain_current_pct = AUTO_GAIN_TARGET
             with self.lock:
                 self.gain_last_action = f"↓ clipping → set to {AUTO_GAIN_TARGET}%"
+                self.gain_history.append((now, AUTO_GAIN_TARGET))
             return
         if peak_db < AUTO_GAIN_WEAK_DB:
             if self.gain_weak_since is None:
@@ -621,8 +642,10 @@ class RecorderState:
                 _set_input_gain(AUTO_GAIN_TARGET)
                 self.gain_last_adjust = now
                 self.gain_weak_since = None
+                self.gain_current_pct = AUTO_GAIN_TARGET
                 with self.lock:
                     self.gain_last_action = f"↑ too weak → set to {AUTO_GAIN_TARGET}%"
+                    self.gain_history.append((now, AUTO_GAIN_TARGET))
         else:
             self.gain_weak_since = None
 
@@ -871,6 +894,45 @@ def _box_row(content: str, width: int = 80) -> str:
     return f"{AMBER}║{RESET} {content}{' ' * pad} {AMBER}║{RESET}"
 
 
+def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> list[str]:
+    """Render a `rows`x`cols` dot grid of the last GAIN_HISTORY_SECONDS of gain.
+
+    Each row represents a 20%% gain bucket (top = 80-100%, bottom = 0-19%).
+    Each column represents GAIN_HISTORY_SECONDS/cols seconds (12s for 10 min / 50).
+    Active samples are drawn as a thick red dot, empty cells as grey dots.
+    """
+    total = GAIN_HISTORY_SECONDS
+    slot = total / cols
+    start_t = now - total
+    samples = sorted(history, key=lambda e: e[0])
+    values: list[Optional[int]] = []
+    for c in range(cols):
+        t_end = start_t + (c + 1) * slot
+        latest: Optional[int] = None
+        for ts, pct in samples:
+            if ts <= t_end:
+                latest = pct
+            else:
+                break
+        values.append(latest)
+    out: list[str] = []
+    for r in range(rows):
+        row_chars: list[str] = []
+        for c in range(cols):
+            v = values[c]
+            if v is None:
+                row_chars.append(f"{GREY}·{RESET}")
+            else:
+                bucket = min(rows - 1, max(0, int(v / (100.0 / rows))))
+                gain_row = rows - 1 - bucket  # row 0 = top = highest gain
+                if r == gain_row:
+                    row_chars.append(f"{RED}{BOLD}●{RESET}")
+                else:
+                    row_chars.append(f"{GREY}·{RESET}")
+        out.append("".join(row_chars))
+    return out
+
+
 def render_ui(state: RecorderState, device_name: str, preview_end: Optional[float]):
     with state.lock:
         mode = state.mode
@@ -883,6 +945,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         clip_active = time.monotonic() < state.clip_hold_until
         clip_count = state.clip_count
         gain_action = state.gain_last_action
+        gain_history = list(state.gain_history)
+        gain_current = state.gain_current_pct
         outdir = state.output_dir
         channels = state.channels
         song_title = state.songrec_current_title
@@ -941,8 +1005,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     if clip_active:
         print(_box_row(
             f"{RED}{BOLD}⚠ CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}", W))
-    if gain_action:
-        print(_box_row(f"{AMBER}Auto-gain: {gain_action}{RESET}", W))
     if start_wall and mode in ("recording", "playlist"):
         print(_box_row(f"{AMBER}Start  : {start_wall:%Y-%m-%d %H:%M:%S}{RESET}", W))
     elif mode == "preview" and preview_end is not None:
@@ -952,6 +1014,21 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
             f"{AMBER}Preview: {remaining}s left  ·  {classify_level(preview_rms)}{RESET}", W))
     else:
         print(_box_row(f"{AMBER}Preview: completed / Pause{RESET}", W))
+    print(_box_bot(W))
+    print()
+
+    # ── Box · Auto-gain history ─────────────────────────────────────────────
+    cur_txt = f"  (now: {gain_current}%)" if gain_current is not None else ""
+    status_line = f"{RED}{BOLD}Auto-gain: {gain_action or '(no adjustment yet)'}{cur_txt}{RESET}"
+    grid_rows = _render_gain_grid(gain_history, time.monotonic())
+    row_labels = ["100%", " 80%", " 60%", " 40%", " 20%"]
+    print(_box_top(W))
+    print(_box_row(status_line, W))
+    for i, row in enumerate(grid_rows):
+        print(_box_row(f"{AMBER}{row_labels[i]} │{RESET}{row}", W))
+    tick = "     " + "".join("┴" if (c % 5 == 0) else "─" for c in range(50))
+    print(_box_row(f"{AMBER}{tick}{RESET}", W))
+    print(_box_row(f"{AMBER}      ←10 min" + " " * 35 + f"now→{RESET}", W))
     print(_box_bot(W))
     print()
 
@@ -1100,6 +1177,7 @@ def main():
                     break
                 time.sleep(UI_REFRESH_SECONDS)
                 state.check_auto_gain()
+                state.poll_gain()
         print("\nAborted by user.")
         if state.mode in ("recording", "playlist"):
             saved = state.stop_and_save()
