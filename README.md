@@ -35,12 +35,11 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
    - Detect whether you have an Intel or Apple Silicon Mac
    - Install Homebrew (macOS package manager) if not already present
    - Install Python 3 via Homebrew
-   - Install ffmpeg (for M4A audio encoding)
-   - Install the required Python packages
+   - Install the required Python packages (sounddevice, soundfile, numpy, shazamio, psutil)
    - Create the **`Start simplerec.command`** file in the same folder
 7. When done, press **ENTER** to close the Terminal window
 
-> Installation takes 5–15 minutes the first time (mostly Homebrew + ffmpeg). On subsequent runs it only updates packages and completes in seconds.
+> Installation takes 5–15 minutes the first time (mostly Homebrew). On subsequent runs it only updates packages and completes in seconds.
 
 ### Step 4 — Start Recording
 
@@ -89,7 +88,7 @@ simplerec controls the macOS system input gain automatically while recording:
 
 ## Output Files
 
-All files are saved to the folder you selected during setup.
+All files are saved to `~/simplerec - recordings` by default (created automatically). You can choose a different folder at startup.
 
 | File | Description |
 |------|-------------|
@@ -115,9 +114,10 @@ simplerec is a command-line audio recorder for macOS with the following built-in
 **Audio capture**
 - Lists all available audio input devices with a short live level test at startup
 - Records in stereo (falls back to mono if the device does not support stereo)
-- Saves recordings as high-quality M4A (AAC) files using macOS's built-in `afconvert` tool
+- Saves recordings as high-quality M4A (AAC) files using macOS's built-in `afconvert` tool — no ffmpeg needed
 - Splits long recordings into segments (up to 120 minutes per segment)
 - Conversion from raw WAV to M4A happens in a background thread so recording is never interrupted
+- Prevents display and idle sleep automatically via macOS `caffeinate` for the entire recording session
 
 **User interface**
 - Full-screen terminal UI that refreshes in real time
@@ -158,8 +158,9 @@ simplerec is a command-line audio recorder for macOS with the following built-in
 
 ## Requirements
 
-- macOS (Intel or Apple Silicon)
-- Python 3 (installed automatically by the installer)
-- ffmpeg (installed automatically by the installer)
+- macOS (Intel or Apple Silicon, macOS 10.15+)
+- Python 3.8 or later (installed automatically by the installer)
 - Internet connection (for song recognition)
+- `psutil` — optional, enables CPU/RAM display in the UI (installed automatically)
+- `shazamio` — optional, enables song recognition (installed automatically)
 

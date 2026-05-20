@@ -28,10 +28,9 @@ echo -e "${RESET}"
 echo "  What this installer does:"
 echo "    1. Installs Homebrew  (macOS package manager)"
 echo "    2. Installs Python 3"
-echo "    3. Installs ffmpeg    (audio encoding to M4A)"
-echo "    4. Installs Python packages:"
-echo "         sounddevice · soundfile · numpy · shazamio"
-echo "    5. Creates  [Start simplerec.command]"
+echo "    3. Installs Python packages:"
+echo "         sounddevice · soundfile · numpy · shazamio · psutil"
+echo "    4. Creates  [Start simplerec.command]"
 echo "       → just double-click that file to record"
 echo
 echo -e "  ${YELLOW}Your password may be asked once for Homebrew.${RESET}"
@@ -82,16 +81,7 @@ else
 fi
 PY=$(command -v python3)
 
-# ── ffmpeg ────────────────────────────────────────────────────────────────────
-echo
-info "Checking ffmpeg …"
-if command -v ffmpeg &>/dev/null; then
-    success "ffmpeg is already installed."
-else
-    warn "Installing ffmpeg via Homebrew …"
-    brew install ffmpeg
-    success "ffmpeg installed."
-fi
+# ── ffmpeg is NOT needed — simplerec uses macOS built-in afconvert ────────────
 
 # ── Python packages ───────────────────────────────────────────────────────────
 echo
@@ -100,9 +90,10 @@ echo "  · sounddevice  — captures audio from your microphone"
 echo "  · soundfile    — reads/writes audio files"
 echo "  · numpy        — numerical processing for the audio stream"
 echo "  · shazamio     — song recognition via Shazam (optional)"
+echo "  · psutil       — CPU/RAM display in the UI (optional)"
 echo
 "$PY" -m pip install --upgrade pip --quiet
-"$PY" -m pip install sounddevice soundfile numpy shazamio --upgrade --quiet
+"$PY" -m pip install sounddevice soundfile numpy shazamio psutil --upgrade --quiet
 success "Python packages installed."
 
 # ── Verify simplerec.py ───────────────────────────────────────────────────────
