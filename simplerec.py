@@ -64,10 +64,16 @@ METER_WIDTH = 38
 PEAK_HOLD_SECONDS = 1.2
 CLIP_HOLD_SECONDS = 2.0
 CLIP_THRESHOLD = 0.995
-AUTO_GAIN_TARGET        = 80    # % to set when auto-adjusting macOS input gain
+AUTO_GAIN_TARGET        = 80    # % – default target when signal is weak
+AUTO_GAIN_BOOST         = 100   # % – target when signal is very weak
+AUTO_GAIN_STEP_DOWN     = 20    # % – step subtracted when clipping danger
+AUTO_GAIN_MIN           = 20    # % – never reduce below this
 AUTO_GAIN_COOLDOWN      = 6.0   # seconds between consecutive adjustments
-AUTO_GAIN_WEAK_DB       = -35.0 # dBFS – signal considered too weak below this
+AUTO_GAIN_WEAK_DB       = -35.0 # dBFS – signal considered weak below this
+AUTO_GAIN_VERY_WEAK_DB  = -50.0 # dBFS – signal considered very weak below this
+AUTO_GAIN_DANGER_DB     = -2.0  # dBFS – peak above this = clipping danger
 AUTO_GAIN_WEAK_HOLD     = 4.0   # seconds of weak signal before raising gain
+AUTO_GAIN_MSG_TTL       = 10.0  # seconds before clearing status message
 GAIN_POLL_SECONDS       = 5.0   # how often to read current input gain
 GAIN_HISTORY_SECONDS    = 600   # 10 min window for gain history graph
 GAIN_HISTORY_MAX        = 256   # max samples kept in history deque
@@ -372,6 +378,7 @@ class RecorderState:
     gain_last_adjust: float = 0.0
     gain_weak_since: Optional[float] = None
     gain_last_action: str = ""  # for UI display
+    gain_last_action_at: float = 0.0  # monotonic time of last action message
     gain_history: deque = field(default_factory=lambda: deque(maxlen=GAIN_HISTORY_MAX))
     gain_current_pct: Optional[int] = None
     gain_last_poll: float = 0.0
@@ -614,8 +621,18 @@ class RecorderState:
         with self.lock:
             self.gain_history.append((now, pct))
 
+    def _apply_gain(self, now: float, new_pct: int, msg: str) -> None:
+        _set_input_gain(new_pct)
+        self.gain_last_adjust = now
+        self.gain_weak_since = None
+        self.gain_current_pct = new_pct
+        with self.lock:
+            self.gain_last_action = msg
+            self.gain_last_action_at = now
+            self.gain_history.append((now, new_pct))
+
     def check_auto_gain(self) -> None:
-        """Raise or lower macOS input gain to AUTO_GAIN_TARGET if level is bad."""
+        """Raise or lower macOS input gain depending on signal level."""
         now = time.monotonic()
         if now - self.gain_last_adjust < AUTO_GAIN_COOLDOWN:
             return
@@ -626,26 +643,31 @@ class RecorderState:
         if mode not in ("recording", "playlist"):
             return
         peak_db = linear_to_dbfs(max(peak_l, peak_r))
-        if clip_now:
-            _set_input_gain(AUTO_GAIN_TARGET)
-            self.gain_last_adjust = now
-            self.gain_weak_since = None
-            self.gain_current_pct = AUTO_GAIN_TARGET
-            with self.lock:
-                self.gain_last_action = f"↓ clipping → set to {AUTO_GAIN_TARGET}%"
-                self.gain_history.append((now, AUTO_GAIN_TARGET))
+        cur = self.gain_current_pct if self.gain_current_pct is not None else _get_input_gain()
+        # Clipping danger → step down
+        if clip_now or peak_db >= AUTO_GAIN_DANGER_DB:
+            base = cur if cur is not None else AUTO_GAIN_TARGET
+            new_pct = max(AUTO_GAIN_MIN, base - AUTO_GAIN_STEP_DOWN)
+            if cur is None or new_pct < cur:
+                self._apply_gain(now, new_pct, f"↓ clipping danger → reduced to {new_pct}%")
             return
-        if peak_db < AUTO_GAIN_WEAK_DB:
+        # Weak signal handling
+        if peak_db < AUTO_GAIN_VERY_WEAK_DB:
             if self.gain_weak_since is None:
                 self.gain_weak_since = now
             elif now - self.gain_weak_since >= AUTO_GAIN_WEAK_HOLD:
-                _set_input_gain(AUTO_GAIN_TARGET)
-                self.gain_last_adjust = now
-                self.gain_weak_since = None
-                self.gain_current_pct = AUTO_GAIN_TARGET
-                with self.lock:
-                    self.gain_last_action = f"↑ too weak → set to {AUTO_GAIN_TARGET}%"
-                    self.gain_history.append((now, AUTO_GAIN_TARGET))
+                if cur is None or cur < AUTO_GAIN_BOOST:
+                    self._apply_gain(now, AUTO_GAIN_BOOST, f"↑ very weak → set to {AUTO_GAIN_BOOST}%")
+                else:
+                    self.gain_weak_since = None
+        elif peak_db < AUTO_GAIN_WEAK_DB:
+            if self.gain_weak_since is None:
+                self.gain_weak_since = now
+            elif now - self.gain_weak_since >= AUTO_GAIN_WEAK_HOLD:
+                if cur is None or cur < AUTO_GAIN_TARGET:
+                    self._apply_gain(now, AUTO_GAIN_TARGET, f"↑ too weak → set to {AUTO_GAIN_TARGET}%")
+                else:
+                    self.gain_weak_since = None
         else:
             self.gain_weak_since = None
 
@@ -945,6 +967,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         clip_active = time.monotonic() < state.clip_hold_until
         clip_count = state.clip_count
         gain_action = state.gain_last_action
+        gain_action_at = state.gain_last_action_at
         gain_history = list(state.gain_history)
         gain_current = state.gain_current_pct
         outdir = state.output_dir
@@ -1019,7 +1042,11 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
 
     # ── Box · Auto-gain history ─────────────────────────────────────────────
     cur_txt = f"  (now: {gain_current}%)" if gain_current is not None else ""
-    status_line = f"{RED}{BOLD}Auto-gain: {gain_action or '(no adjustment yet)'}{cur_txt}{RESET}"
+    if gain_action and (time.monotonic() - gain_action_at) <= AUTO_GAIN_MSG_TTL:
+        action_txt = gain_action
+    else:
+        action_txt = "(idle)"
+    status_line = f"{RED}{BOLD}Auto-gain: {action_txt}{cur_txt}{RESET}"
     grid_rows = _render_gain_grid(gain_history, time.monotonic())
     row_labels = ["100%", " 80%", " 60%", " 40%", " 20%"]
     print(_box_top(W))
