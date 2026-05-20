@@ -964,20 +964,21 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
         values.append(latest)
     out: list[str] = []
     # Row 0 = 100% (top), Row 1 = 80%, Row 2 = 60%, Row 3 = 40%, Row 4 = 20%
-    row_colors = [RED, RED_BRIGHT, YELLOW, YELLOW, GREEN]
+    row_colors = [RED, RED_BRIGHT, YELLOW, GREEN, GREEN]
     for r in range(rows):
+        color = row_colors[r]
         row_chars: list[str] = []
         for c in range(cols):
             v = values[c]
             if v is None:
-                row_chars.append(f"{GREY}·{RESET}")
+                row_chars.append(f"{DIM}{color}·{RESET}")
+                continue
+            bucket = min(rows - 1, max(0, int(v / (100.0 / rows))))
+            gain_row = rows - 1 - bucket  # row 0 = top = highest gain
+            if r == gain_row:
+                row_chars.append(f"{color}{BOLD}●{RESET}")
             else:
-                bucket = min(rows - 1, max(0, int(v / (100.0 / rows))))
-                gain_row = rows - 1 - bucket  # row 0 = top = highest gain
-                if r == gain_row:
-                    row_chars.append(f"{row_colors[r]}{BOLD}●{RESET}")
-                else:
-                    row_chars.append(f"{GREY}·{RESET}")
+                row_chars.append(f"{DIM}{color}·{RESET}")
         out.append("".join(row_chars))
     return out
 
