@@ -2,6 +2,7 @@
 # =============================================================================
 #  simplerec — Installer
 #  Doppelklick im Finder genügt. macOS öffnet diese Datei automatisch.
+#  Supports: Intel (x86_64) and Apple Silicon (arm64)
 # =============================================================================
 
 set -euo pipefail
@@ -14,7 +15,6 @@ success() { echo -e "${GREEN}${BOLD}[✓]${RESET} $*"; }
 warn()    { echo -e "${YELLOW}${BOLD}[!]${RESET} $*"; }
 error()   { echo -e "${RED}${BOLD}[✗]${RESET} $*"; echo; read -r -p "Press ENTER to close …"; exit 1; }
 
-# Move to the folder where this file lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
@@ -31,21 +31,19 @@ echo "    2. Installs Python 3"
 echo "    3. Installs ffmpeg    (audio encoding to M4A)"
 echo "    4. Installs Python packages:"
 echo "         sounddevice · soundfile · numpy · shazamio"
-echo "    5. Creates  「Start simplerec.command」"
+echo "    5. Creates  [Start simplerec.command]"
 echo "       → just double-click that file to record"
 echo
 echo -e "  ${YELLOW}Your password may be asked once for Homebrew.${RESET}"
 echo
-read -r -p "  Press ENTER to start installation, or close this window to abort …"
+read -r -p "  Press ENTER to start, or close this window to abort …"
 echo
 
 # ── Architecture ──────────────────────────────────────────────────────────────
 ARCH=$(uname -m)
 if [[ "$ARCH" == "arm64" ]]; then
-    BREW_PREFIX="/opt/homebrew"
     info "Apple Silicon (arm64) detected"
 else
-    BREW_PREFIX="/usr/local"
     info "Intel (x86_64) detected"
 fi
 
@@ -57,16 +55,20 @@ if command -v brew &>/dev/null; then
 else
     warn "Homebrew not found — installing now (this takes a few minutes) …"
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    [[ "$ARCH" == "arm64" ]] \
-        && eval "$(/opt/homebrew/bin/brew shellenv)" \
-        || eval "$(/usr/local/bin/brew shellenv)"
+    if [[ "$ARCH" == "arm64" ]]; then
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    else
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
     success "Homebrew installed."
 fi
 
 # Ensure brew is on PATH for the rest of this script
-[[ "$ARCH" == "arm64" ]] \
-    && eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true \
-    || eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true
+if [[ "$ARCH" == "arm64" ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true
+else
+    eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true
+fi
 
 # ── Python 3 ─────────────────────────────────────────────────────────────────
 echo
@@ -94,11 +96,21 @@ fi
 # ── Python packages ───────────────────────────────────────────────────────────
 echo
 info "Installing Python packages …"
+echo "  · sounddevice  — captures audio from your microphone"
+echo "  · soundfile    — reads/writes audio files"
+echo "  · numpy        — numerical processing for the audio stream"
+echo "  · shazamio     — song recognition via Shazam (optional)"
+echo
 "$PY" -m pip install --upgrade pip --quiet
 "$PY" -m pip install sounddevice soundfile numpy shazamio --upgrade --quiet
 success "Python packages installed."
 
-# ── Create 「Start simplerec.command」 ────────────────────────────────────────
+# ── Verify simplerec.py ───────────────────────────────────────────────────────
+if [[ ! -f "$SCRIPT_DIR/simplerec.py" ]]; then
+    error "simplerec.py not found in $SCRIPT_DIR — please run this installer from the project folder."
+fi
+
+# ── Create [Start simplerec.command] ─────────────────────────────────────────
 echo
 info "Creating start file …"
 
@@ -132,9 +144,9 @@ read -r -p "Recording finished. Press ENTER to close …"
 STARTSCRIPT
 
 chmod +x "$START"
-success "Start file created: Start simplerec.command"
+success "Start file created."
 
-# ── Gatekeeper: remove quarantine flag ───────────────────────────────────────
+# ── Remove quarantine flags ───────────────────────────────────────────────────
 xattr -d com.apple.quarantine "$START" 2>/dev/null || true
 xattr -d com.apple.quarantine "$0"     2>/dev/null || true
 
@@ -144,9 +156,9 @@ echo -e "${GREEN}${BOLD}  ══════════════════
 echo -e "${GREEN}${BOLD}   Installation complete!${RESET}"
 echo -e "${GREEN}${BOLD}  ════════════════════════════════════════════${RESET}"
 echo
-echo "  → Double-click  「Start simplerec.command」  in Finder to record."
+echo "  → Double-click  [Start simplerec.command]  in Finder to record."
 echo
 echo "  If macOS blocks the file the first time:"
-echo "    Right-click the file → Open → Open"
+echo "    Right-click → Open → Open"
 echo
 read -r -p "Press ENTER to close …"
