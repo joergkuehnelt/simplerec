@@ -1247,6 +1247,11 @@ def main():
         filename_prefix=filename_prefix,
         max_record_seconds=max_minutes * 60.0,
     )
+    # Prevent display & idle sleep for the duration of the recording.
+    _caffeinate = None
+    if shutil.which("caffeinate"):
+        _caffeinate = subprocess.Popen(["caffeinate", "-d", "-i"])
+
     state.start_writer()
     state.start_converter()
     state.start_stream()
@@ -1356,6 +1361,9 @@ def main():
         except OSError:
             pass
         print("Done.")
+        if _caffeinate is not None:
+            _caffeinate.terminate()
+            _caffeinate.wait()
 
 
 if __name__ == "__main__":
