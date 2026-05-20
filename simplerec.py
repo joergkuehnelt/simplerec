@@ -362,6 +362,8 @@ class RecorderState:
     songrec_last_tagid: str = ""
     playlist_path: Optional[Path] = None
     playlist_last_tagid: str = ""
+    playlist_last_artist: str = ""
+    playlist_last_title: str = ""
     playlist_last_was_empty: bool = False
     filename_prefix: str = ""
     max_record_seconds: Optional[float] = None
@@ -404,15 +406,22 @@ class RecorderState:
         with self.lock:
             path = self.playlist_path
             last_tagid = self.playlist_last_tagid
+            last_artist = self.playlist_last_artist
+            last_title = self.playlist_last_title
             last_was_empty = self.playlist_last_was_empty
         if path is None:
             return
         if title and artist:
+            # deduplicate: by tagid when available, else by artist+title
             if tagid and tagid == last_tagid:
-                return  # same song recognised again – skip
+                return  # same song (tagid match) – skip
+            if not tagid and artist == last_artist and title == last_title:
+                return  # same song (artist/title match, no tagid) – skip
             line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title};{genre};{year}\n"
             with self.lock:
                 self.playlist_last_tagid = tagid
+                self.playlist_last_artist = artist
+                self.playlist_last_title = title
                 self.playlist_last_was_empty = False
         else:
             if last_was_empty:
@@ -420,6 +429,8 @@ class RecorderState:
             line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};;;;\n"
             with self.lock:
                 self.playlist_last_tagid = ""
+                self.playlist_last_artist = ""
+                self.playlist_last_title = ""
                 self.playlist_last_was_empty = True
         try:
             with open(path, "a", encoding="utf-8") as f:
