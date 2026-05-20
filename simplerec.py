@@ -712,12 +712,14 @@ class RecorderState:
         with self.lock:
             mode = self.mode
             peak_l, peak_r = self.latest_peak_lr
+            rms_l, rms_r = self.latest_rms_lr
             clip_now = now < self.clip_hold_until
         if mode not in ("recording", "playlist"):
             return
         peak_db = linear_to_dbfs(max(peak_l, peak_r))
+        rms_db  = linear_to_dbfs(max(rms_l, rms_r))
         cur = self.gain_current_pct if self.gain_current_pct is not None else _get_input_gain()
-        # Clipping danger → step down
+        # Clipping danger → step down (use instantaneous peak)
         if clip_now or peak_db >= AUTO_GAIN_DANGER_DB:
             base = cur if cur is not None else AUTO_GAIN_TARGET
             new_pct = max(AUTO_GAIN_MIN, base - AUTO_GAIN_STEP_DOWN)
@@ -726,8 +728,8 @@ class RecorderState:
                 self._apply_gain(now, new_pct, msg)
                 self.append_gain_event_to_playlist(msg)
             return
-        # Weak signal handling
-        if peak_db < AUTO_GAIN_VERY_WEAK_DB:
+        # Weak signal handling (use RMS – less sensitive to brief transients)
+        if rms_db < AUTO_GAIN_VERY_WEAK_DB:
             if self.gain_weak_since is None:
                 self.gain_weak_since = now
             elif now - self.gain_weak_since >= AUTO_GAIN_WEAK_HOLD:
@@ -737,7 +739,7 @@ class RecorderState:
                     self.append_gain_event_to_playlist(msg)
                 else:
                     self.gain_weak_since = None
-        elif peak_db < AUTO_GAIN_WEAK_DB:
+        elif rms_db < AUTO_GAIN_WEAK_DB:
             if self.gain_weak_since is None:
                 self.gain_weak_since = now
             elif now - self.gain_weak_since >= AUTO_GAIN_WEAK_HOLD:
