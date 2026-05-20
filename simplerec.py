@@ -77,6 +77,7 @@ GREEN = "\033[38;5;46m"
 YELLOW = "\033[38;5;226m"
 RED = "\033[38;5;196m"
 GREY = "\033[38;5;240m"
+BLUE      = "\033[38;5;39m"
 BG_AMBER  = "\033[48;5;214m"   # amber background (for key bar)
 BG_WHITE  = "\033[107m"        # bright-white background (for highlighted keys)
 FG_BLACK  = "\033[30m"         # black foreground (readable on both amber/white bg)
@@ -853,11 +854,11 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     clear_screen()
 
     # ── Logo ────────────────────────────────────────────────────────────────
-    print(f"{AMBER}{BOLD}   _____ ______  _______  __    __________  ____________{RESET}")
-    print(f"{AMBER}{BOLD}  / ___//  _/  |/  / __ \\/ /   / ____/ __ \\/ ____/ ____/{RESET}")
-    print(f"{AMBER}{BOLD}  \\__ \\ / // /|_/ / /_/ / /   / __/ / /_/ / __/ / /     {RESET}")
-    print(f"{AMBER}{BOLD} ___/ // // /  / / ____/ /___/ /___/ _, _/ /___/ /___   {RESET}")
-    print(f"{AMBER}{BOLD}/____/___/_/  /_/_/   /_____/_____/_/ |_/_____/\\____/   {DIM}v{VERSION}{RESET}")
+    print(f"{AMBER}{BOLD}  _____ ___ __  __ ____  _     _____ ____  _____ ____  {RESET}")
+    print(f"{AMBER}{BOLD} / ____|_ _|  \\/  |  _ \\| |   | ____|  _ \\| ____/ ___| {RESET}")
+    print(f"{AMBER}{BOLD} \\___ \\ | || |\\/| | |_) | |   |  _| | |_) |  _|| |     {RESET}")
+    print(f"{AMBER}{BOLD}  ___) || || |  | |  __/| |___| |___|  _ <| |__| |___  {RESET}")
+    print(f"{AMBER}{BOLD} |____/___|_|  |_|_|   |_____|_____|_| \\_\\_____|\\____| {DIM} v{VERSION}{RESET}")
     print()
 
     # ── Box 1 · Device & Status ─────────────────────────────────────────────
@@ -865,7 +866,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(_box_row(f"{AMBER}Device : {_trunc(device_name, 56)}  {ch_label}{RESET}", W))
     print(_box_row(f"{AMBER}Folder : {_trunc(str(outdir), 67)}{RESET}", W))
     print(_box_row(
-        f"{AMBER}Status : {status_label}{AMBER}    Length : {human_duration(elapsed)}"
+        f"{AMBER}Status : {status_label}{AMBER}    Length : {BLUE}{BOLD}{human_duration(elapsed)}{RESET}{AMBER}"
         f"    Ch: {channels}{sys_txt}{RESET}", W))
     if clip_active:
         print(_box_row(
@@ -903,9 +904,9 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     meta_txt = "  ·  ".join(meta_parts)
     print(_box_top(W))
     print(_box_row(
-        f"{AMBER}Song : {BOLD}{_trunc(song_artist + ' - ' + song_title, 69)}{RESET}", W))
+        f"{AMBER}Song : {BLUE}{BOLD}{_trunc(song_artist + ' - ' + song_title, 69)}{RESET}", W))
     print(_box_row(
-        f"{AMBER}Info : {BOLD}{_trunc(meta_txt, 69) if meta_txt else '-'}{RESET}", W))
+        f"{AMBER}Info : {BLUE}{BOLD}{_trunc(meta_txt, 69) if meta_txt else '-'}{RESET}", W))
     print(_box_row(
         f"{AMBER}Check: {song_last_check}  Match: {song_last_match}"
         f"  Next: {countdown:2d}s{shazam_ok_txt}{RESET}", W))
@@ -917,8 +918,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         return f"{BG_WHITE}{FG_BLACK}{BOLD} {k} {RESET}{BG_AMBER}{FG_BLACK}"
 
     bar = (
-        f"  {_key_btn('S')}=STOP    "
-        f"{_key_btn('R')}=RESTART    "
+        f"  {_key_btn('S')}=STOP (pause)    "
+        f"{_key_btn('R')}=RESTART (new file)    "
         f"{_key_btn('Q')}=SAVE & QUIT    "
         f"{_key_btn('P')}=PLAYLIST ONLY  "
     )
