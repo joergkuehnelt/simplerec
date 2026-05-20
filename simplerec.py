@@ -1,16 +1,7 @@
 
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-macOS CLI Audio Recorder (.m4a, Stereo, Song Recognition)
 
-English-only output version with built-in help messages.
-
-Examples:
-    python3 audio_recorder_macos_m4a_stereo_songrec_en_help.py --help
-    python3 audio_recorder_macos_m4a_stereo_songrec_en_help.py --help-messages
-    python3 audio_recorder_macos_m4a_stereo_songrec_en_help.py
-"""
 
 from __future__ import annotations
 
@@ -414,6 +405,7 @@ class RecorderState:
     playlist_last_tagid: str = ""
     playlist_last_artist: str = ""
     playlist_last_title: str = ""
+    playlist_last_key: tuple = ("", "")
     playlist_last_was_empty: bool = False
     filename_prefix: str = ""
     max_record_seconds: Optional[float] = None
@@ -450,6 +442,43 @@ class RecorderState:
         except OSError:
             pass
 
+    @staticmethod
+    def _norm_key(artist: Optional[str], title: Optional[str]) -> tuple:
+        return ((artist or "").strip().casefold(), (title or "").strip().casefold())
+
+    @staticmethod
+    def _last_song_key_from_file(path: Path) -> Optional[tuple]:
+        """Read the file tail and return the normalized (artist, title) of the
+        last actual song row (ignoring CLIP-ADJUST and no-match lines). None on
+        error / no song row found."""
+        try:
+            if not path.exists():
+                return None
+            with open(path, "rb") as f:
+                try:
+                    f.seek(-4096, 2)
+                except OSError:
+                    f.seek(0)
+                tail = f.read().decode("utf-8", errors="ignore")
+        except OSError:
+            return None
+        for ln in reversed(tail.splitlines()):
+            ln = ln.strip()
+            if not ln:
+                continue
+            parts = ln.split(";")
+            if len(parts) < 4:
+                continue
+            # CLIP-ADJUST rows have "CLIP-ADJUST" in the artist column
+            if parts[2].strip() == "CLIP-ADJUST":
+                continue
+            artist = parts[2]
+            title = parts[3]
+            if not (artist or title):
+                continue
+            return (artist.strip().casefold(), title.strip().casefold())
+        return None
+
     def append_to_playlist(self, title, artist, tagid: str, check_time: dt.datetime,
                             elapsed: float, genre: str = "", year: str = ""):
         """Append one entry to the segment playlist .txt file, skipping duplicates."""
@@ -459,30 +488,37 @@ class RecorderState:
             if path is None:
                 return
             if title and artist:
-                # deduplicate: either by tagid OR by artist+title match
+                new_key = self._norm_key(artist, title)
+                # In-memory dedup: tagid or normalized artist/title match
                 same_tag = bool(tagid) and tagid == self.playlist_last_tagid
-                same_name = (
-                    artist == self.playlist_last_artist
-                    and title == self.playlist_last_title
-                )
-                if same_tag or same_name:
-                    # refresh tagid in case Shazam newly provides one for the same song
+                same_key = new_key == self.playlist_last_key and new_key != ("", "")
+                if same_tag or same_key:
                     if tagid and not self.playlist_last_tagid:
                         self.playlist_last_tagid = tagid
+                    self.playlist_last_key = new_key
                     return
                 line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title};{genre};{year}\n"
                 self.playlist_last_tagid = tagid
                 self.playlist_last_artist = artist
                 self.playlist_last_title = title
+                self.playlist_last_key = new_key
                 self.playlist_last_was_empty = False
             else:
                 if self.playlist_last_was_empty:
                     return  # consecutive no-match – skip
                 line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};;;;\n"
-                # keep last song info so the same song is still skipped after a no-match
                 self.playlist_last_was_empty = True
         if line is None:
             return
+        # Second-level guard: compare against the LAST actual song row in the
+        # file. This catches any in-memory dedup state loss / races.
+        if title and artist:
+            file_key = self._last_song_key_from_file(path)
+            new_key = self._norm_key(artist, title)
+            if file_key is not None and file_key == new_key:
+                with self.lock:
+                    self.playlist_last_key = new_key
+                return
         try:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(line)
@@ -784,6 +820,7 @@ class RecorderState:
             self.playlist_last_tagid = ""
             self.playlist_last_artist = ""
             self.playlist_last_title = ""
+            self.playlist_last_key = ("", "")
             self.playlist_last_was_empty = False
             if self.playlist_only:
                 self.mode = "playlist"
