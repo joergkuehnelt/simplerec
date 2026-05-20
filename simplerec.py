@@ -1202,7 +1202,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         f"  {_key_btn('S')}=STOP (pause)  "
         f"{_key_btn('R')}=RESTART (new file)  "
         f"{_key_btn('Q')}=SAVE & QUIT  "
-        f"{_key_btn('P')}=PLAYLIST ONLY"
+        f"{_key_btn('P')}=PLAYLIST ONLY  "
+        f"{_key_btn('U')}=UPDATE"
     )
     pad = " " * max(0, W - _visible_len(bar))
     print(f"{BG_AMBER}{FG_BLACK}{bar}{pad}{RESET}")
@@ -1333,6 +1334,22 @@ def main():
                 elif key in ("0", "2", "4", "6", "8") and not state.auto_gain_enabled:
                     pct = {"0": 100, "2": 20, "4": 40, "6": 60, "8": 80}[key]
                     state.manual_set_gain(pct)
+                elif key == "u":
+                    # Save current segment, then launch the updater script
+                    if state.mode in ("recording", "playlist"):
+                        saved = state.stop_and_save()
+                        if saved:
+                            print(f"\n{AMBER}Segment saved: {saved.name}{RESET}")
+                    with state.lock:
+                        state.mode = "quitting"
+                    updater = Path(__file__).parent / "Update simplerec.command"
+                    if updater.exists():
+                        print(f"\nLaunching updater …")
+                        import subprocess as _sp
+                        _sp.Popen(["bash", str(updater)])
+                    else:
+                        print(f"\n{AMBER}Update simplerec.command not found — please download manually.{RESET}")
+                    break
                 elif key == "q":
                     if state.mode in ("recording", "playlist"):
                         saved = state.stop_and_save()
