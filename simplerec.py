@@ -732,7 +732,9 @@ class RecorderState:
                 self.gain_weak_since = now
             elif now - self.gain_weak_since >= AUTO_GAIN_WEAK_HOLD:
                 if cur is None or cur < AUTO_GAIN_BOOST:
-                    self._apply_gain(now, AUTO_GAIN_BOOST, f"↑ very weak → set to {AUTO_GAIN_BOOST}%")
+                    msg = f"↑ very weak → set to {AUTO_GAIN_BOOST}%"
+                    self._apply_gain(now, AUTO_GAIN_BOOST, msg)
+                    self.append_gain_event_to_playlist(msg)
                 else:
                     self.gain_weak_since = None
         elif peak_db < AUTO_GAIN_WEAK_DB:
@@ -740,7 +742,9 @@ class RecorderState:
                 self.gain_weak_since = now
             elif now - self.gain_weak_since >= AUTO_GAIN_WEAK_HOLD:
                 if cur is None or cur < AUTO_GAIN_TARGET:
-                    self._apply_gain(now, AUTO_GAIN_TARGET, f"↑ too weak → set to {AUTO_GAIN_TARGET}%")
+                    msg = f"↑ too weak → set to {AUTO_GAIN_TARGET}%"
+                    self._apply_gain(now, AUTO_GAIN_TARGET, msg)
+                    self.append_gain_event_to_playlist(msg)
                 else:
                     self.gain_weak_since = None
         else:
