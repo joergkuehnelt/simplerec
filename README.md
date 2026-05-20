@@ -4,6 +4,7 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
 
 **What simplerec does:**
 - Records stereo audio as high-quality M4A files
+- Lets you choose from all available input devices — internal mic, external soundcard, USB microphone, etc.
 - Recognises songs automatically via Shazam in the background
 - Saves each recording segment in its own time-stamped subfolder
 - Takes optional webcam photos to identify DJs (first after 5 min, then every 15 min)
