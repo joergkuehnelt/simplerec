@@ -1,17 +1,137 @@
 # simplerec
 
-A minimal macOS command-line audio recorder that captures stereo sound in M4A format with optional song recognition via [SongRec](https://github.com/marin-m/songrec).
+A macOS audio recorder that captures stereo sound in M4A format with integrated song recognition via Shazam. Just set how long you want to record, give your files a prefix, and hit go — simplerec handles the rest.
 
-## Requirements
+---
 
-- macOS
-- Python 3
-- `ffmpeg`
-- `SongRec` (optional, for song recognition)
+## Installation — Step by Step (no Terminal required)
+
+### Step 1 — Download the project
+
+1. Open this page in your browser: **https://github.com/joergkuehnelt/simplerec**
+2. Click the green **Code** button near the top right
+3. Click **Download ZIP**
+4. A file called `simplerec-main.zip` will appear in your **Downloads** folder
+
+### Step 2 — Unpack the ZIP
+
+1. Open your **Downloads** folder in Finder
+2. Double-click `simplerec-main.zip`
+3. A folder called `simplerec-main` appears next to it
+4. Move this folder to wherever you want to keep it (e.g. your Desktop or Documents)
+
+### Step 3 — Run the Installer
+
+> The installer sets up everything automatically: Homebrew, Python 3, ffmpeg, and all required packages.
+
+1. Open the `simplerec-main` folder in Finder
+2. Double-click **`Install simplerec.command`**
+3. macOS may show a security warning the first time:
+   - Click **Cancel** on the warning dialog
+   - Right-click (or Ctrl-click) the file → **Open** → **Open**
+4. A Terminal window opens and the installer starts
+5. Follow the on-screen prompts — you may be asked for your Mac password once (for Homebrew)
+6. The installer will automatically:
+   - Detect whether you have an Intel or Apple Silicon Mac
+   - Install Homebrew (macOS package manager) if not already present
+   - Install Python 3 via Homebrew
+   - Install ffmpeg (for M4A audio encoding)
+   - Install the required Python packages
+   - Create the **`Start simplerec.command`** file in the same folder
+7. When done, press **ENTER** to close the Terminal window
+
+> Installation takes 5–15 minutes the first time (mostly Homebrew + ffmpeg). On subsequent runs it only updates packages and completes in seconds.
+
+### Step 4 — Start Recording
+
+1. Open the `simplerec-main` folder in Finder
+2. Double-click **`Start simplerec.command`**
+3. If macOS blocks it: Right-click → **Open** → **Open** (only needed the first time)
+4. A Terminal window opens with the simplerec interface
+5. Answer the startup questions:
+   - **How many minutes to record?** — enter a number between 1 and 120
+   - **Filename prefix** — enter a label for your files (e.g. `Party2026_`) or press ENTER to skip
+   - **Output folder** — confirm the suggested folder or enter your own path
+   - **Input device** — choose your microphone or audio interface from the list
+6. A 5-second preview runs so you can check your audio levels
+7. Recording starts automatically after the preview
+
+---
 
 ## Usage
 
-```bash
-python3 simplerec.py
-python3 simplerec.py --help
+Once recording is running, you control it with these keys in the Terminal window:
+
+| Key | Action |
+|-----|--------|
+| `S` | Stop the current segment, save it, switch to PAUSE |
+| `R` | Restart — save current segment and begin a new one |
+| `Q` | Save the current segment and quit |
+| `Ctrl+C` | Emergency stop (segment is saved where possible) |
+
+When the set recording duration is reached, simplerec **automatically saves the file and starts a new recording** with the same settings — it never stops on its own.
+
+---
+
+## Output Files
+
+All files are saved to the folder you selected during setup.
+
+| File | Description |
+|------|-------------|
+| `[prefix]YYYYMMDD-startHHMM-endHHMM.m4a` | Audio recording segment |
+| `[prefix]current_song_YYYYMMDD-HHMM.txt` | Song log for the session |
+
+**Example** with prefix `Party2026_` and a recording started at 10:30:
 ```
+Party2026_20260520-start1030-end1130.m4a
+Party2026_current_song_20260520-1030.txt
+```
+
+---
+
+## Functionality
+
+simplerec is a command-line audio recorder for macOS with the following built-in features:
+
+**Audio capture**
+- Lists all available audio input devices with a short live level test at startup
+- Records in stereo (falls back to mono if the device does not support stereo)
+- Saves recordings as high-quality M4A (AAC) files using macOS's built-in `afconvert` tool
+- Splits long recordings into segments (up to 120 minutes per segment)
+- Conversion from raw WAV to M4A happens in a background thread so recording is never interrupted
+
+**User interface**
+- Full-screen terminal UI that refreshes in real time
+- Stereo VU meter with peak-hold indicators and colour coding (green → yellow → red)
+- Clipping warning with event counter
+- Live display of elapsed recording time, channel count, device name, and output folder
+- Status line shows `● REC` (red) or `‖ PAUSE` (amber) at a glance
+
+**Song recognition**
+- Integrated Shazam-based song recognition via ShazamIO
+- Runs continuously in the background — every 25 seconds a short audio snippet is analysed
+- Displays the currently playing song (artist and title) in the terminal
+- Writes a timestamped song log file (`current_song_YYYYMMDD-HHMM.txt`) alongside the recording
+- Requires an active internet connection; if the connection is unavailable the recognition retries silently without interrupting recording
+
+**Session management**
+- Asks for recording duration (1–120 min) and a filename prefix at startup
+- Automatically saves the current segment and starts a new one when the duration is reached
+- Each new session gets its own song log file with a fresh timestamp
+- All output files — audio and song log — are saved to the same folder
+
+**Notes**
+- Requires macOS (uses the built-in `afconvert` tool for M4A encoding)
+- Keyboard controls require a real macOS Terminal window (not an IDE console)
+- Run `python3 simplerec.py --help-messages` for extended in-app help
+
+---
+
+## Requirements
+
+- macOS (Intel or Apple Silicon)
+- Python 3 (installed automatically by the installer)
+- ffmpeg (installed automatically by the installer)
+- Internet connection (for song recognition)
+
