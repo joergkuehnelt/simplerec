@@ -695,10 +695,12 @@ class RecorderState:
             end_wall = dt.datetime.now()
             tmp_name = self.current_temp_name
             start_wall = self.segment_start_wall
-            try: self.current_file.flush()
-            except Exception: pass
-            try: self.current_file.close()
-            except Exception: pass
+            if self.current_file is not None:
+                try:
+                    self.current_file.flush()
+                    self.current_file.close()
+                except Exception:
+                    pass
             self.current_file = None
             self.current_temp_name = None
             self.segment_start_wall = None
