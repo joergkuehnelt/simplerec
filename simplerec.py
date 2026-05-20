@@ -698,7 +698,9 @@ class RecorderState:
     def manual_set_gain(self, pct: int) -> None:
         """Manually set input gain (when autogain is disabled)."""
         now = time.monotonic()
-        self._apply_gain(now, pct, f"manual → {pct}%")
+        msg = f"manual → {pct}%"
+        self._apply_gain(now, pct, msg)
+        self.append_gain_event_to_playlist(msg)
 
     def check_auto_gain(self) -> None:
         """Raise or lower macOS input gain depending on signal level."""
