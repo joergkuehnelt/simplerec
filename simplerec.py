@@ -653,21 +653,27 @@ def select_input_device() -> tuple[int, int, int, str]:
             input_devices.append((idx, samplerate, channels, dev["name"], left_db, right_db, max_input))
     if not input_devices:
         raise RuntimeError("No input devices found.")
-    # fixed-width columns: [##]  name(truncated)  ch  kHz  level
-    # total line <= 80 chars
-    #   [##] = 4   name = 34   ch = 3   kHz = 7   level = 28   margins = 4
-    NAME_W = 34
+    # columns (all visible chars, ANSI codes excluded from count):
+    # [##](4) name(28) Stereo/Mono  (8) kHz(5) [bar8](10) L±xx.x R±xx.xdB(18) = 79
+    NAME_W = 28
+    BAR_W  = 8
+    print(f"{'':4} {'Name':<28}  {'Ch':<6}  {'Rate':>5}  {'Signal':^10}  {'Level'}")
+    print(f"{'':4} {'-'*28}  {'-'*6}  {'-'*5}  {'-'*10}  {'-'*17}")
     for i, (sd_idx, samplerate, channels, name, left_db, right_db, maxch) in enumerate(input_devices):
-        ch_txt  = "St" if channels >= 2 else "Mo"
+        ch_txt  = "Stereo" if channels >= 2 else "Mono  "
         khz_txt = f"{samplerate // 1000}kHz"
-        name_t  = name[:NAME_W].ljust(NAME_W) if len(name) <= NAME_W else name[:NAME_W - 1] + "…"
+        name_t  = (name[:NAME_W - 1] + "…") if len(name) > NAME_W else name.ljust(NAME_W)
         if left_db is None:
-            lvl_txt = f"{GREY}  n/a          {RESET}"
-        elif right_db is None:
-            lvl_txt = f"L{left_db:6.1f}dB"
+            bar     = GREY + "·" * BAR_W + RESET
+            lvl_txt = f"{GREY}n/a{RESET}"
         else:
-            lvl_txt = f"L{left_db:6.1f} R{right_db:6.1f}dB"
-        print(f"[{i:02d}] {name_t}  {ch_txt}  {khz_txt:>6}  {lvl_txt}")
+            max_db  = max(left_db, right_db) if right_db is not None else left_db
+            bar     = colored_meter(max_db, max_db, width=BAR_W)
+            if right_db is None:
+                lvl_txt = f"L{left_db:+6.1f}dB"
+            else:
+                lvl_txt = f"L{left_db:+6.1f} R{right_db:+6.1f}dB"
+        print(f"[{i:02d}] {name_t}  {ch_txt}  {khz_txt:>5}  [{bar}] {lvl_txt}")
     while True:
         raw = input("\nDevice number: ").strip()
         if raw.isdigit() and 0 <= int(raw) < len(input_devices):
