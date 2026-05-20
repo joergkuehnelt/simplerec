@@ -288,6 +288,28 @@ def probe_input_level(device_index: int, samplerate: int, channels: int, seconds
     return None, None  # values was empty
 
 
+def _extract_track_meta(track: dict) -> dict:
+    """Pull genre, album and release year from a Shazam track dict."""
+    genre = ""
+    album = ""
+    year  = ""
+    genres = track.get("genres")
+    if isinstance(genres, dict):
+        genre = genres.get("primary") or ""
+    for section in track.get("sections", []):
+        if isinstance(section, dict) and section.get("type") == "SONG":
+            for meta in section.get("metadata", []):
+                if isinstance(meta, dict):
+                    key = (meta.get("title") or "").lower()
+                    val =  meta.get("text")  or ""
+                    if key == "album":
+                        album = val
+                    elif key == "released":
+                        year = val[:4]  # first four chars = year
+            break
+    return {"genre": genre, "album": album, "year": year}
+
+
 @dataclass
 class RecorderState:
     device_index: int
@@ -322,6 +344,9 @@ class RecorderState:
     songrec_last_match: Optional[dt.datetime] = None
     songrec_current_title: str = "-"
     songrec_current_artist: str = "-"
+    songrec_current_genre: str = ""
+    songrec_current_album: str = ""
+    songrec_current_year: str = ""
     songrec_status: str = "not started"
     songrec_total_checks: int = 0
     songrec_next_check_at: float = 0.0
@@ -352,6 +377,9 @@ class RecorderState:
                 f"Last check   : {last_check}\n"
                 f"Last match   : {last_match}\n"
                 f"Current song : {self.songrec_current_artist} - {self.songrec_current_title}\n"
+                f"Genre        : {self.songrec_current_genre}\n"
+                f"Album        : {self.songrec_current_album}\n"
+                f"Year         : {self.songrec_current_year}\n"
                 f"Status       : {self.songrec_status}\n"
                 f"Checks       : {self.songrec_total_checks}\n"
             )
@@ -360,7 +388,8 @@ class RecorderState:
         except OSError:
             pass
 
-    def append_to_playlist(self, title, artist, tagid: str, check_time: dt.datetime, elapsed: float):
+    def append_to_playlist(self, title, artist, tagid: str, check_time: dt.datetime,
+                            elapsed: float, genre: str = "", year: str = ""):
         """Append one entry (or blank line) to the segment playlist .txt file."""
         with self.lock:
             path = self.playlist_path
@@ -371,7 +400,7 @@ class RecorderState:
         if title and artist:
             if tagid and tagid == last_tagid:
                 return  # duplicate recognition – skip
-            line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title}\n"
+            line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title};{genre};{year}\n"
             try:
                 with open(path, "a", encoding="utf-8") as f:
                     f.write(line)
@@ -393,17 +422,18 @@ class RecorderState:
 
     async def _recognize_file(self, path: Path):
         if not self.songrec_enabled or Shazam is None:
-            return None, None, "ShazamIO not installed", ""
+            return None, None, "ShazamIO not installed", "", {}
         try:
             shazam = Shazam()
             result = await shazam.recognize(str(path))
             tagid = result.get("tagid", "") if isinstance(result, dict) else ""
             track = result.get("track") if isinstance(result, dict) else None
             if track:
-                return (track.get("title") or "-", track.get("subtitle") or "-", "Match", tagid)
-            return None, None, "No match", tagid
+                meta = _extract_track_meta(track)
+                return (track.get("title") or "-", track.get("subtitle") or "-", "Match", tagid, meta)
+            return None, None, "No match", tagid, {}
         except Exception as exc:
-            return None, None, f"Error: {type(exc).__name__}", ""
+            return None, None, f"Error: {type(exc).__name__}", "", {}
 
     def start_songrec(self):
         if not self.songrec_enabled:
@@ -442,7 +472,7 @@ class RecorderState:
                     with self.lock:
                         seg_start_mono = self.segment_start_monotonic
                     elapsed_at_check = max(0.0, time.monotonic() - seg_start_mono) if seg_start_mono is not None else 0.0
-                    title, artist, status, tagid = asyncio.run(self._recognize_file(snippet_path))
+                    title, artist, status, tagid, meta = asyncio.run(self._recognize_file(snippet_path))
                     with self.lock:
                         self.songrec_last_check = now
                         self.songrec_total_checks += 1
@@ -451,9 +481,13 @@ class RecorderState:
                         if title and artist:
                             self.songrec_current_title = title
                             self.songrec_current_artist = artist
+                            self.songrec_current_genre = meta.get("genre", "")
+                            self.songrec_current_album = meta.get("album", "")
+                            self.songrec_current_year  = meta.get("year", "")
                             self.songrec_last_match = now
                     self.write_song_status_file()
-                    self.append_to_playlist(title, artist, tagid or "", now, elapsed_at_check)
+                    self.append_to_playlist(title, artist, tagid or "", now, elapsed_at_check,
+                                            meta.get("genre", ""), meta.get("year", ""))
                 except Exception as exc:
                     with self.lock:
                         self.songrec_last_check = dt.datetime.now()
@@ -725,6 +759,9 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         song_last_match = state.songrec_last_match.strftime("%H:%M:%S") if state.songrec_last_match else "-"
         song_next_at = state.songrec_next_check_at
         song_tagid = state.songrec_last_tagid
+        song_genre = state.songrec_current_genre
+        song_album = state.songrec_current_album
+        song_year  = state.songrec_current_year
         song_fname = state._song_status_fname()
     elapsed = state.elapsed_segment_seconds() if mode == "recording" else 0.0
     db_l = linear_to_dbfs(rms_l)
@@ -760,6 +797,9 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     countdown = max(0, int(song_next_at - time.monotonic()))
     shazam_ok_txt = "  Shazam ok" if song_tagid else ""
     print(f"{AMBER}{BOLD}Song:{RESET} {GREEN}{BOLD}{_trunc(song_artist + ' - ' + song_title, 74)}{RESET}")
+    meta_parts = [p for p in [song_genre, song_year, song_album] if p]
+    meta_txt = "  ·  ".join(meta_parts)
+    print(f"{DIM}     {_trunc(meta_txt, 74) if meta_txt else '-'}{RESET}")
     print(f"{DIM}Check: {song_last_check}  Match: {song_last_match}  Next: {countdown:2d}s{shazam_ok_txt}{RESET}")
     print(f"{DIM}List : {_trunc(str(outdir / song_fname), 73)}{RESET}")
     print()
