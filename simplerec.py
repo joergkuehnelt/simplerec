@@ -74,6 +74,7 @@ PHOTO_INTERVAL_SECONDS = 900   # 15 minutes between webcam snapshots
 RESET = "\033[0m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
+BLINK = "\033[5m"
 CLEAR = "\033[2J\033[H"
 AMBER = "\033[38;5;214m"
 GREEN = "\033[38;5;46m"
@@ -267,6 +268,21 @@ def ask_filename_prefix() -> str:
     return safe
 
 
+def ask_dj_photos() -> bool:
+    print("\nDJ Webcam Photos")
+    print("----------------")
+    print("simplerec can take a photo every 15 minutes using your webcam.")
+    print("This helps you match DJ sets to the recorded playlists later.")
+    print("Photos are saved as .jpg files in the same output folder.")
+    print("Note: the green camera LED will light up briefly for each shot.")
+    if shutil.which("imagesnap") is None:
+        print("Note: 'imagesnap' is not installed — photos will be skipped.")
+        print("      Install with: brew install imagesnap")
+        return False
+    raw = input("Take webcam photos every 15 min? [Y/n]: ").strip().lower()
+    return raw in ("", "y", "yes")
+
+
 def choose_output_dir() -> Path:
     suggested = default_output_dir().expanduser()
     print("\nOutput Folder")
@@ -388,8 +404,10 @@ class RecorderState:
     songrec_enabled: bool = SONGREC_AVAILABLE
     songrec_stop: threading.Event = field(default_factory=threading.Event)
     songrec_thread: Optional[threading.Thread] = None
+    photo_enabled: bool = False
     photo_stop: threading.Event = field(default_factory=threading.Event)
     photo_thread: Optional[threading.Thread] = None
+    photo_countdown: Optional[int] = None
     recent_blocks: deque = field(default_factory=deque)
     songrec_last_check: Optional[dt.datetime] = None
     songrec_last_match: Optional[dt.datetime] = None
@@ -625,29 +643,42 @@ class RecorderState:
 
     def start_photo(self) -> None:
         """Start background thread that takes a webcam photo every PHOTO_INTERVAL_SECONDS."""
+        if not self.photo_enabled:
+            return
         if shutil.which("imagesnap") is None:
             return  # imagesnap not installed – silently skip
         self.photo_stop.clear()
         def _runner():
-            # Wait for the first interval before taking the first shot
-            self.photo_stop.wait(PHOTO_INTERVAL_SECONDS)
+            next_photo = time.monotonic() + PHOTO_INTERVAL_SECONDS
             while not self.photo_stop.is_set():
-                with self.lock:
-                    out_dir = self.output_dir
-                    prefix  = self.filename_prefix or ""
-                if out_dir is not None:
-                    ts   = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-                    dest = out_dir / f"{prefix}photo_{ts}.jpg"
-                    try:
-                        subprocess.run(
-                            ["imagesnap", "-w", "1", str(dest)],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            timeout=15,
-                        )
-                    except Exception:
-                        pass
-                self.photo_stop.wait(PHOTO_INTERVAL_SECONDS)
+                secs_until = next_photo - time.monotonic()
+                if secs_until <= 0:
+                    with self.lock:
+                        self.photo_countdown = None
+                        out_dir = self.output_dir
+                        prefix  = self.filename_prefix or ""
+                    if out_dir is not None:
+                        ts   = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+                        dest = out_dir / f"{prefix}photo_{ts}.jpg"
+                        try:
+                            subprocess.run(
+                                ["imagesnap", "-w", "1", str(dest)],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                timeout=15,
+                            )
+                        except Exception:
+                            pass
+                    next_photo = time.monotonic() + PHOTO_INTERVAL_SECONDS
+                elif secs_until <= 5.0:
+                    with self.lock:
+                        self.photo_countdown = max(1, math.ceil(secs_until))
+                else:
+                    with self.lock:
+                        self.photo_countdown = None
+                self.photo_stop.wait(0.4)
+            with self.lock:
+                self.photo_countdown = None
         self.photo_thread = threading.Thread(target=_runner, daemon=True)
         self.photo_thread.start()
 
@@ -1117,6 +1148,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         playlist_only = state.playlist_only
         max_record_seconds = state.max_record_seconds
         session_start_mono = state.session_start_monotonic
+        photo_enabled  = state.photo_enabled
+        photo_countdown = state.photo_countdown
     elapsed = state.elapsed_segment_seconds() if mode in ("recording", "playlist") else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -1170,6 +1203,16 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
             f"{AMBER}Preview: {remaining}s left  ·  {classify_level(preview_rms)}{RESET}", W))
     else:
         print(_box_row(f"{AMBER}Preview: completed / Pause{RESET}", W))
+    # DJ picture status
+    if photo_enabled:
+        dj_status = f"{GREEN}{BOLD}ON{RESET}"
+    else:
+        dj_status = f"{DIM}OFF{RESET}"
+    print(_box_row(f"{AMBER}DJ PIC : {dj_status}{RESET}", W))
+    if photo_countdown is not None:
+        s = "s" if photo_countdown != 1 else ""
+        smile_msg = f"{RED}{BLINK}{BOLD}  \U0001f4f7 SMILE IN {photo_countdown} second{s}!{RESET}"
+        print(_box_row(smile_msg, W))
     print(_box_bot(W))
     print()
 
@@ -1277,6 +1320,7 @@ def main():
     output_dir = choose_output_dir()
     max_minutes = ask_recording_minutes()
     filename_prefix = ask_filename_prefix()
+    dj_photos = ask_dj_photos()
     device_index, samplerate, channels, device_name = select_input_device()
     print(f"\nSelected: {device_name} (sd-index={device_index})")
     print(f"Output folder: {output_dir}")
@@ -1294,6 +1338,7 @@ def main():
         filename_prefix=filename_prefix,
         max_record_seconds=max_minutes * 60.0,
     )
+    state.photo_enabled = dj_photos
     # Prevent display & idle sleep for the duration of the recording.
     _caffeinate = None
     try:
