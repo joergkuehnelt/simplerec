@@ -854,11 +854,11 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     clear_screen()
 
     # ── Logo ────────────────────────────────────────────────────────────────
-    print(f"{AMBER}{BOLD}  _____ ___ __  __ ____  _     _____ ____  _____ ____  {RESET}")
-    print(f"{AMBER}{BOLD} / ____|_ _|  \\/  |  _ \\| |   | ____|  _ \\| ____/ ___| {RESET}")
-    print(f"{AMBER}{BOLD} \\___ \\ | || |\\/| | |_) | |   |  _| | |_) |  _|| |     {RESET}")
-    print(f"{AMBER}{BOLD}  ___) || || |  | |  __/| |___| |___|  _ <| |__| |___  {RESET}")
-    print(f"{AMBER}{BOLD} |____/___|_|  |_|_|   |_____|_____|_| \\_\\_____|\\____| {DIM} v{VERSION}{RESET}")
+    print(f"{AMBER}{BOLD}███████ ██ ███    ███ ██████  ██      ███████ ██████  ███████  ██████ {RESET}")
+    print(f"{AMBER}{BOLD}██      ██ ████  ████ ██   ██ ██      ██      ██   ██ ██      ██      {RESET}")
+    print(f"{AMBER}{BOLD}███████ ██ ██ ████ ██ ██████  ██      █████   ██████  █████   ██      {RESET}")
+    print(f"{AMBER}{BOLD}     ██ ██ ██  ██  ██ ██      ██      ██      ██   ██ ██      ██      {RESET}")
+    print(f"{AMBER}{BOLD}███████ ██ ██      ██ ██      ███████ ███████ ██   ██ ███████  ██████ {DIM} v{VERSION}{RESET}")
     print()
 
     # ── Box 1 · Device & Status ─────────────────────────────────────────────
