@@ -35,6 +35,10 @@ echo "       → just double-click that file to record"
 echo
 echo -e "  ${YELLOW}Your password may be asked once for Homebrew.${RESET}"
 echo
+echo -e "  ${YELLOW}If macOS shows 'could not be verified' / Gatekeeper warning:${RESET}"
+echo    "  Run this once in Terminal, then double-click again:"
+echo    "    xattr -cr \"$(dirname \"$0\")\""
+echo
 read -r -p "  Press ENTER to start, or close this window to abort …"
 echo
 
