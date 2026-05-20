@@ -896,7 +896,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(_box_row(
         f"{AMBER}Check: {song_last_check}  Match: {song_last_match}"
         f"  Next: {countdown:2d}s{shazam_ok_txt}{RESET}", W))
-    print(_box_row(f"{AMBER}List : {_trunc(str(outdir / song_fname), 69)}{RESET}", W))
     print(_box_bot(W))
     print()
 
