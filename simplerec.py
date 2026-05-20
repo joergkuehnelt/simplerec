@@ -69,7 +69,8 @@ GAIN_HISTORY_MAX        = 256   # max samples kept in history deque
 SONGREC_WINDOW_SECONDS = 5
 SONGREC_INTERVAL_SECONDS = 15
 SONGREC_TEMP_SNIPPET = ".songrec_snippet.wav"
-PHOTO_INTERVAL_SECONDS = 900   # 15 minutes between webcam snapshots
+PHOTO_FIRST_DELAY_SECONDS = 300  # 5 minutes before first webcam snapshot
+PHOTO_INTERVAL_SECONDS = 900    # 15 minutes between subsequent snapshots
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -651,7 +652,7 @@ class RecorderState:
             return  # imagesnap not installed – silently skip
         self.photo_stop.clear()
         def _runner():
-            next_photo = time.monotonic() + PHOTO_INTERVAL_SECONDS
+            next_photo = time.monotonic() + PHOTO_FIRST_DELAY_SECONDS
             while not self.photo_stop.is_set():
                 secs_until = next_photo - time.monotonic()
                 if secs_until <= 0:
