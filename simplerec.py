@@ -643,7 +643,7 @@ class RecorderState:
 def select_input_device() -> tuple[int, int, int, str]:
     devices = sd.query_devices()
     input_devices = []
-    print("\nAvailable input devices (short level test – please speak briefly / feed a signal):\n")
+    print("\nInput devices  (brief level test – feed a signal now):\n")
     for idx, dev in enumerate(devices):
         max_input = int(dev.get("max_input_channels", 0))
         if max_input > 0:
@@ -653,23 +653,29 @@ def select_input_device() -> tuple[int, int, int, str]:
             input_devices.append((idx, samplerate, channels, dev["name"], left_db, right_db, max_input))
     if not input_devices:
         raise RuntimeError("No input devices found.")
+    # fixed-width columns: [##]  name(truncated)  ch  kHz  level
+    # total line <= 80 chars
+    #   [##] = 4   name = 34   ch = 3   kHz = 7   level = 28   margins = 4
+    NAME_W = 34
     for i, (sd_idx, samplerate, channels, name, left_db, right_db, maxch) in enumerate(input_devices):
-        mode_txt = "Stereo" if channels >= 2 else "Mono fallback"
+        ch_txt  = "St" if channels >= 2 else "Mo"
+        khz_txt = f"{samplerate // 1000}kHz"
+        name_t  = name[:NAME_W].ljust(NAME_W) if len(name) <= NAME_W else name[:NAME_W - 1] + "…"
         if left_db is None:
-            lvl_txt = f"{GREY}n/a{RESET}"
+            lvl_txt = f"{GREY}  n/a          {RESET}"
         elif right_db is None:
-            lvl_txt = f"L {left_db:6.1f} dBFS"
+            lvl_txt = f"L{left_db:6.1f}dB"
         else:
-            lvl_txt = f"L {left_db:6.1f} dBFS | R {right_db:6.1f} dBFS"
-        print(f"[{i:02d}] sd-index={sd_idx:02d} | {name} | maxch={maxch} | use={channels} ({mode_txt}) | {samplerate} Hz | Level: {lvl_txt}")
+            lvl_txt = f"L{left_db:6.1f} R{right_db:6.1f}dB"
+        print(f"[{i:02d}] {name_t}  {ch_txt}  {khz_txt:>6}  {lvl_txt}")
     while True:
-        raw = input("\nNumber of the desired device: ").strip()
+        raw = input("\nDevice number: ").strip()
         if raw.isdigit() and 0 <= int(raw) < len(input_devices):
             sd_idx, samplerate, channels, name, _, _, _ = input_devices[int(raw)]
             if channels < 2:
-                print("Note: The selected device does not support stereo. Recording will use mono fallback.")
+                print("Note: mono fallback (device has no stereo).")
             return sd_idx, samplerate, channels, name
-        print("Invalid input. Please choose one of the listed numbers.")
+        print("Invalid – please choose one of the listed numbers.")
 
 
 def _trunc(s: str, width: int = 80) -> str:
