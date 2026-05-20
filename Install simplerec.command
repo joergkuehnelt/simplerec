@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  simplerec — Installer
+#  Doppelklick im Finder genügt. macOS öffnet diese Datei automatisch.
+# =============================================================================
+
+set -euo pipefail
+
+BOLD="\033[1m"; RESET="\033[0m"
+GREEN="\033[32m"; YELLOW="\033[33m"; CYAN="\033[36m"; RED="\033[31m"
+
+info()    { echo -e "${CYAN}${BOLD}[•]${RESET} $*"; }
+success() { echo -e "${GREEN}${BOLD}[✓]${RESET} $*"; }
+warn()    { echo -e "${YELLOW}${BOLD}[!]${RESET} $*"; }
+error()   { echo -e "${RED}${BOLD}[✗]${RESET} $*"; echo; read -r -p "Press ENTER to close …"; exit 1; }
+
+# Move to the folder where this file lives
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+clear
+echo -e "${BOLD}"
+echo "  ╔══════════════════════════════════════════════╗"
+echo "  ║         simplerec  —  Installer              ║"
+echo "  ║   macOS CLI Audio Recorder  (M4A / Stereo)   ║"
+echo "  ╚══════════════════════════════════════════════╝"
+echo -e "${RESET}"
+echo "  What this installer does:"
+echo "    1. Installs Homebrew  (macOS package manager)"
+echo "    2. Installs Python 3"
+echo "    3. Installs ffmpeg    (audio encoding to M4A)"
+echo "    4. Installs Python packages:"
+echo "         sounddevice · soundfile · numpy · shazamio"
+echo "    5. Creates  「Start simplerec.command」"
+echo "       → just double-click that file to record"
+echo
+echo -e "  ${YELLOW}Your password may be asked once for Homebrew.${RESET}"
+echo
+read -r -p "  Press ENTER to start installation, or close this window to abort …"
+echo
+
+# ── Architecture ──────────────────────────────────────────────────────────────
+ARCH=$(uname -m)
+if [[ "$ARCH" == "arm64" ]]; then
+    BREW_PREFIX="/opt/homebrew"
+    info "Apple Silicon (arm64) detected"
+else
+    BREW_PREFIX="/usr/local"
+    info "Intel (x86_64) detected"
+fi
+
+# ── Homebrew ──────────────────────────────────────────────────────────────────
+echo
+info "Checking Homebrew …"
+if command -v brew &>/dev/null; then
+    success "Homebrew is already installed."
+else
+    warn "Homebrew not found — installing now (this takes a few minutes) …"
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    [[ "$ARCH" == "arm64" ]] \
+        && eval "$(/opt/homebrew/bin/brew shellenv)" \
+        || eval "$(/usr/local/bin/brew shellenv)"
+    success "Homebrew installed."
+fi
+
+# Ensure brew is on PATH for the rest of this script
+[[ "$ARCH" == "arm64" ]] \
+    && eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true \
+    || eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true
+
+# ── Python 3 ─────────────────────────────────────────────────────────────────
+echo
+info "Checking Python 3 …"
+if command -v python3 &>/dev/null; then
+    success "Python 3 found: $(python3 --version)"
+else
+    warn "Installing Python 3 via Homebrew …"
+    brew install python3
+    success "Python 3 installed: $(python3 --version)"
+fi
+PY=$(command -v python3)
+
+# ── ffmpeg ────────────────────────────────────────────────────────────────────
+echo
+info "Checking ffmpeg …"
+if command -v ffmpeg &>/dev/null; then
+    success "ffmpeg is already installed."
+else
+    warn "Installing ffmpeg via Homebrew …"
+    brew install ffmpeg
+    success "ffmpeg installed."
+fi
+
+# ── Python packages ───────────────────────────────────────────────────────────
+echo
+info "Installing Python packages …"
+"$PY" -m pip install --upgrade pip --quiet
+"$PY" -m pip install sounddevice soundfile numpy shazamio --upgrade --quiet
+success "Python packages installed."
+
+# ── Create 「Start simplerec.command」 ────────────────────────────────────────
+echo
+info "Creating start file …"
+
+START="$SCRIPT_DIR/Start simplerec.command"
+
+cat > "$START" << 'STARTSCRIPT'
+#!/usr/bin/env bash
+# simplerec — start (double-click in Finder to launch)
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Ensure Homebrew Python is on PATH
+if [[ "$(uname -m)" == "arm64" ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true
+else
+    eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true
+fi
+
+cd "$SCRIPT_DIR"
+
+if [[ ! -f "simplerec.py" ]]; then
+    echo "Error: simplerec.py not found in $SCRIPT_DIR"
+    read -r -p "Press ENTER to close …"
+    exit 1
+fi
+
+python3 simplerec.py "$@"
+
+echo
+read -r -p "Recording finished. Press ENTER to close …"
+STARTSCRIPT
+
+chmod +x "$START"
+success "Start file created: Start simplerec.command"
+
+# ── Gatekeeper: remove quarantine flag ───────────────────────────────────────
+xattr -d com.apple.quarantine "$START" 2>/dev/null || true
+xattr -d com.apple.quarantine "$0"     2>/dev/null || true
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+echo
+echo -e "${GREEN}${BOLD}  ════════════════════════════════════════════${RESET}"
+echo -e "${GREEN}${BOLD}   Installation complete!${RESET}"
+echo -e "${GREEN}${BOLD}  ════════════════════════════════════════════${RESET}"
+echo
+echo "  → Double-click  「Start simplerec.command」  in Finder to record."
+echo
+echo "  If macOS blocks the file the first time:"
+echo "    Right-click the file → Open → Open"
+echo
+read -r -p "Press ENTER to close …"
