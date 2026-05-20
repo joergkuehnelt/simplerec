@@ -630,13 +630,21 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     elapsed = state.elapsed_segment_seconds() if mode == "recording" else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
-    status = "REC" if mode == "recording" else "PAUSE"
-    status_color = RED + BOLD if mode == "recording" else AMBER + BOLD
+    if mode == "recording":
+        status_label = f"{RED}{BOLD}● REC{RESET}"
+    else:
+        status_label = f"{AMBER}{BOLD}‖ PAUSE{RESET}"
     clear_screen()
-    print(f"{AMBER}{BOLD}macOS Audio Recorder  ·  M4A / AAC  ·  60 min Segments{RESET}")
-    print(f"{CYAN}Device : {device_name}{RESET}")
-    print(f"{CYAN}Folder : {outdir}{RESET}")
-    print(f"{status_color}Status : {status}{RESET}    {AMBER}Length : {human_duration(elapsed)}{RESET}    {MAGENTA}Channels: {channels}{RESET}")
+    print(f"{AMBER}{BOLD}  ███████╗██╗███╗   ███╗██████╗ ██╗     ███████╗██████╗ ███████╗ ██████╗{RESET}")
+    print(f"{AMBER}{BOLD}  ██╔════╝██║████╗ ████║██╔══██╗██║     ██╔════╝██╔══██╗██╔════╝██╔════╝{RESET}")
+    print(f"{AMBER}{BOLD}  ███████╗██║██╔████╔██║██████╔╝██║     █████╗  ██████╔╝█████╗  ██║{RESET}")
+    print(f"{AMBER}{BOLD}  ╚════██║██║██║╚██╔╝██║██╔═══╝ ██║     ██╔══╝  ██╔══██╗██╔══╝  ██║{RESET}")
+    print(f"{AMBER}{BOLD}  ███████║██║██║ ╚═╝ ██║██║     ███████╗███████╗██║  ██║███████╗╚██████╗{RESET}")
+    print(f"{AMBER}{BOLD}  ╚══════╝╚═╝╚═╝     ╚═╝╚═╝     ╚══════╝╚══════╝╚═╝  ╚═╝╚══════╝ ╚═════╝  {DIM}-beta{RESET}")
+    print()
+    print(f"{AMBER}Device : {device_name}{RESET}")
+    print(f"{AMBER}Folder : {outdir}{RESET}")
+    print(f"Status : {status_label}    {AMBER}Length : {human_duration(elapsed)}{RESET}    {AMBER}Channels: {channels}{RESET}")
     if clip_active:
         print(f"{RED}{BOLD}WARNING: CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}")
     if start_wall and mode == "recording":
@@ -648,15 +656,15 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     else:
         print(f"{AMBER}Preview: completed / Pause{RESET}")
     print()
-    print(f"{AMBER}L:{RESET} [{colored_meter(db_l, hold_l)}] {db_l:6.1f} dBFS   peak={peak_l:.3f}")
-    print(f"{AMBER}R:{RESET} [{colored_meter(db_r, hold_r)}] {db_r:6.1f} dBFS   peak={peak_r:.3f}")
+    print(f"{AMBER}L:{RESET} [{colored_meter(db_l, hold_l)}] {GREEN}{db_l:6.1f} dBFS{RESET}   peak={peak_l:.3f}")
+    print(f"{AMBER}R:{RESET} [{colored_meter(db_r, hold_r)}] {GREEN}{db_r:6.1f} dBFS{RESET}   peak={peak_r:.3f}")
     print(f"{DIM}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS   Pending Save Jobs: {pending_conversions}{RESET}")
     print()
-    print(f"{AMBER}{BOLD}Song:{RESET} {song_artist} - {song_title}")
+    print(f"{AMBER}{BOLD}Song:{RESET} {GREEN}{BOLD}{song_artist} - {song_title}{RESET}")
     print(f"{DIM}Last check: {song_last_check}   Last match: {song_last_match}   Status: {song_status}{RESET}")
     with state.lock:
         song_fname = state._song_status_fname()
-    print(f"{DIM}Status file: {outdir / song_fname}{RESET}")
+    print(f"{DIM}Playlist : {outdir / song_fname}{RESET}")
     print()
     print(f"{AMBER}Keys   :{RESET} {BOLD}S{RESET}=STOP  {BOLD}R{RESET}=RESTART  {BOLD}Q{RESET}=Save and quit")
     print(f"{DIM}Help   : run with --help or --help-messages for usage details{RESET}")
