@@ -22,36 +22,43 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
 
 ### Step 3 — Run the Installer
 
-> The installer sets up everything automatically: Homebrew, Python 3, ffmpeg, and all required packages.
-> **macOS Gatekeeper warning ("could not be verified")?**
+1. Open the `simplerec-main` folder in Finder
+2. Double-click **`Install simplerec.command`**
+
+**If macOS shows a "could not be verified" warning** — this is expected for files downloaded from the internet. To allow it:
+
+> #### How to bypass Gatekeeper via System Settings (recommended — no Terminal needed)
 >
-> **Option A — System Settings** (recommended, no Terminal needed):
-> 1. Double-click the file → click **OK** on the warning
-> 2. Open **System Settings → Privacy & Security**
-> 3. Scroll down → click **"Open Anyway"** next to the file name
-> 4. Confirm with your password
+> 1. Double-click `Install simplerec.command` in Finder
+> 2. macOS shows a warning dialog — click **OK** (or **Done**) to dismiss it
+> 3. Open the **Apple menu ()** → **System Settings**
+> 4. Click **Privacy & Security** in the left sidebar
+> 5. Scroll down to the **Security** section
+> 6. You will see a message like *"Install simplerec.command was blocked…"* — click **Open Anyway**
+> 7. Enter your Mac password when prompted
+> 8. Double-click the file again — it will now open normally
 >
-> **Option B — Right-click** (may work on older macOS):
-> Right-click (or Ctrl-click) the file in Finder → **Open** → **Open**
->
-> **Option C — Terminal** (always works):
+> This only needs to be done once per file.
+
+> #### Alternative: Right-click in Finder (may work on older macOS)
+> Right-click (or hold **Ctrl** and click) the file → choose **Open** → click **Open** in the dialog.
+
+> #### Alternative: Terminal (always works)
+> Open Terminal and run:
 > ```
 > xattr -cr ~/Downloads/simplerec-main
 > ```
-1. Open the `simplerec-main` folder in Finder
-2. Double-click **`Install simplerec.command`**
-3. macOS may show a security warning the first time:
-   - Click **Cancel** on the warning dialog
-   - Right-click (or Ctrl-click) the file → **Open** → **Open**
-4. A Terminal window opens and the installer starts
-5. Follow the on-screen prompts — you may be asked for your Mac password once (for Homebrew)
-6. The installer will automatically:
+> Then double-click the file again.
+
+3. A Terminal window opens and the installer starts
+4. Follow the on-screen prompts — you may be asked for your Mac password once (for Homebrew)
+5. The installer will automatically:
    - Detect whether you have an Intel or Apple Silicon Mac
    - Install Homebrew (macOS package manager) if not already present
    - Install Python 3 via Homebrew
    - Install the required Python packages (sounddevice, soundfile, numpy, shazamio, psutil)
    - Create the **`Start simplerec.command`** file in the same folder
-7. When done, press **ENTER** to close the Terminal window
+6. When done, press **ENTER** to close the Terminal window
 
 > Installation takes 5–15 minutes the first time (mostly Homebrew). On subsequent runs it only updates packages and completes in seconds.
 
@@ -59,7 +66,7 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
 
 1. Open the `simplerec-main` folder in Finder
 2. Double-click **`Start simplerec.command`**
-3. If macOS blocks it: Right-click → **Open** → **Open** (only needed the first time)
+3. If macOS blocks it the first time: follow the same **System Settings → Privacy & Security → Open Anyway** steps described in Step 3 above
 4. A Terminal window opens with the simplerec interface
 5. Answer the startup questions:
    - **How many minutes to record?** — enter a number between 1 and 120
