@@ -83,11 +83,12 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
 Once recording is running, you control it with these keys in the Terminal window:
 
 | Key | Action |
-|-----|--------|
+|-----|---------|
 | `S` | Stop the current segment, save it, switch to PAUSE |
 | `R` | Restart — save current segment and begin a new one |
 | `Q` | Save the current segment and quit |
 | `P` | Toggle PLAYLIST-ONLY mode (song log only, no M4A file) |
+| `U` | Save the current segment, quit, and launch the updater |
 | `A` | Toggle AUTOGAIN (AUTO ↔ MANUAL) |
 | `2` `4` `6` `8` `0` | In MANUAL mode: set input gain to 20 / 40 / 60 / 80 / 100 % |
 | `Ctrl+C` | Emergency stop (segment is saved where possible) |
@@ -104,6 +105,14 @@ simplerec controls the macOS system input gain automatically while recording:
 - Every gain change is recorded as a `CLIP-ADJUST` line in the playlist file with timestamp
 - A 5×50 dot-grid in the UI shows the last 10 minutes of gain history (rows = 20 % gain buckets; colours: 100 % red, 80 % bright red, 60 % yellow, 40 / 20 % green)
 - Press `A` to switch to **MANUAL** mode and pick a fixed gain with the number keys; press `A` again to return to AUTO
+
+### Updating simplerec
+
+There are two ways to update to the latest version:
+
+**From within the app** — press `U` while recording. simplerec saves the current segment, quits, and automatically opens `Update simplerec.command`, which downloads the latest code from GitHub and re-runs the installer.
+
+**Manually** — double-click **`Update simplerec.command`** in Finder at any time. It downloads the latest ZIP from GitHub, overwrites the local files, and launches the installer in the same Terminal window.
 
 ---
 
@@ -147,7 +156,7 @@ simplerec is a command-line audio recorder for macOS with the following built-in
 - Dedicated **Auto-gain** box with a 5×50 dot-grid showing the last 10 minutes of input-gain history
 - Live display of elapsed recording time, channel count, device name, and output folder
 - Status line shows `● REC` (red) or `‖ PAUSE` (amber) at a glance
-- Two key-bars at the bottom: transport keys (S/R/Q/P) and gain controls (A/2/4/6/8/0)
+- Three key-bars at the bottom: transport (S/R/Q), utility (P/U), and gain controls (A/2/4/6/8/0)
 
 **Auto-gain (macOS system input volume)**
 - Continuously monitors the input level while recording
