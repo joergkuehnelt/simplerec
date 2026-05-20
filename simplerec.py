@@ -438,33 +438,30 @@ class RecorderState:
     def append_to_playlist(self, title, artist, tagid: str, check_time: dt.datetime,
                             elapsed: float, genre: str = "", year: str = ""):
         """Append one entry to the segment playlist .txt file, skipping duplicates."""
+        line: Optional[str] = None
         with self.lock:
             path = self.playlist_path
-            last_tagid = self.playlist_last_tagid
-            last_artist = self.playlist_last_artist
-            last_title = self.playlist_last_title
-            last_was_empty = self.playlist_last_was_empty
-        if path is None:
-            return
-        if title and artist:
-            # deduplicate: by tagid when available, else by artist+title
-            if tagid and tagid == last_tagid:
-                return  # same song (tagid match) – skip
-            if not tagid and artist == last_artist and title == last_title:
-                return  # same song (artist/title match, no tagid) – skip
-            line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title};{genre};{year}\n"
-            with self.lock:
+            if path is None:
+                return
+            if title and artist:
+                # deduplicate: by tagid when available, else by artist+title
+                if tagid and tagid == self.playlist_last_tagid:
+                    return  # same song (tagid match) – skip
+                if not tagid and artist == self.playlist_last_artist and title == self.playlist_last_title:
+                    return  # same song (artist/title match, no tagid) – skip
+                line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title};{genre};{year}\n"
                 self.playlist_last_tagid = tagid
                 self.playlist_last_artist = artist
                 self.playlist_last_title = title
                 self.playlist_last_was_empty = False
-        else:
-            if last_was_empty:
-                return  # consecutive no-match – skip
-            line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};;;;\n"
-            with self.lock:
+            else:
+                if self.playlist_last_was_empty:
+                    return  # consecutive no-match – skip
+                line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};;;;\n"
                 # keep last song info so the same song is still skipped after a no-match
                 self.playlist_last_was_empty = True
+        if line is None:
+            return
         try:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(line)
@@ -709,6 +706,8 @@ class RecorderState:
             self.segment_start_monotonic = time.monotonic()
             self.playlist_path = self.output_dir / f"{self.filename_prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.playlist.txt"
             self.playlist_last_tagid = ""
+            self.playlist_last_artist = ""
+            self.playlist_last_title = ""
             self.playlist_last_was_empty = False
             if self.playlist_only:
                 self.mode = "playlist"
