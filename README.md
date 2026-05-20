@@ -6,7 +6,7 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
 - Records stereo audio as high-quality M4A files
 - Recognises songs automatically via Shazam in the background
 - Saves each recording segment in its own time-stamped subfolder
-- Takes an optional webcam photo every 15 minutes to identify DJs
+- Takes optional webcam photos to identify DJs (first after 5 min, then every 15 min)
 - Controls the macOS input gain automatically (auto-gain)
 - Never stops on its own — cycles automatically into new segments
 - Updates itself in one click (press `U` while recording)
@@ -82,7 +82,7 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
    - **How many minutes to record?** — enter a number between 1 and 120
    - **Filename prefix** — enter a label for your files (e.g. `Party2026_`) or press ENTER to skip
    - **Output folder** — confirm the suggested folder or enter your own path
-   - **DJ webcam photos** — choose whether to take a photo every 15 min to identify DJs
+   - **DJ webcam photos** — choose whether to take webcam photos (first after 5 min, then every 15 min)
    - **Input device** — choose your microphone or audio interface from the list
 6. A 5-second preview runs so you can check your audio levels
 7. Recording starts automatically after the preview
@@ -204,7 +204,7 @@ simplerec is a command-line audio recorder for macOS with the following built-in
 
 **DJ webcam photos**
 - Optional feature: asked at startup whether to enable
-- Takes a photo every 15 minutes using the built-in webcam via `imagesnap`
+- Takes the first photo 5 minutes after recording starts, then every 15 minutes after that, via `imagesnap`
 - Saved as `[prefix]photo_YYYYMMDD-HHMMSS.jpg` in the current segment subfolder
 - 5-second countdown shown in the UI (blinking red “SMILE IN X seconds!”)
 - Status shown in the UI: `DJ PIC: ON / OFF`
