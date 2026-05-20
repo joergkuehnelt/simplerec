@@ -1048,6 +1048,13 @@ def main():
         print("Waiting for pending M4A conversions …")
         state.convert_q.join()
         state.stop_converter()
+        # remove the live-status txt file — only the playlist is kept
+        try:
+            status_file = state.output_dir / state._song_status_fname()
+            if status_file.exists():
+                status_file.unlink()
+        except OSError:
+            pass
         print("Done.")
 
 
