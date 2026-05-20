@@ -30,7 +30,8 @@ echo "    1. Installs Homebrew  (macOS package manager)"
 echo "    2. Installs Python 3"
 echo "    3. Installs Python packages:"
 echo "         sounddevice · soundfile · numpy · shazamio · psutil"
-echo "    4. Creates  [Start simplerec.command]"
+echo "    4. Installs imagesnap  (webcam snapshots every 15 min — optional)"
+echo "    5. Creates  [Start simplerec.command]"
 echo "       → just double-click that file to record"
 echo
 echo -e "  ${YELLOW}Your password may be asked once for Homebrew.${RESET}"
@@ -166,7 +167,12 @@ echo -e "${GREEN}${BOLD}  ══════════════════
 echo
 echo "  → Double-click  [Start simplerec.command]  in Finder to record."
 echo
+echo "  Features:"
+echo "    · Stereo M4A recording  ·  Auto-gain  ·  Shazam song recognition"
+echo "    · Webcam DJ photos every 15 min (ask at startup)  ·  Auto-update [U]"
+echo "    · Each segment saved in its own YYYYMMDD-HHMM subfolder"
+echo
 echo "  If macOS blocks the file the first time:"
-echo "    Right-click → Open → Open"
+echo "    System Settings → Privacy & Security → Open Anyway"
 echo
 read -r -p "Press ENTER to close …"

@@ -1,6 +1,15 @@
 # simplerec
 
-A macOS audio recorder that captures stereo sound in M4A format with integrated song recognition via Shazam. Just set how long you want to record, give your files a prefix, and hit go — simplerec handles the rest.
+A macOS audio recorder that captures stereo sound in M4A format with integrated song recognition via Shazam and optional DJ webcam photos. Set how long you want to record, give your files a prefix, and hit go — simplerec handles the rest.
+
+**What simplerec does:**
+- Records stereo audio as high-quality M4A files
+- Recognises songs automatically via Shazam in the background
+- Saves each recording segment in its own time-stamped subfolder
+- Takes an optional webcam photo every 15 minutes to identify DJs
+- Controls the macOS input gain automatically (auto-gain)
+- Never stops on its own — cycles automatically into new segments
+- Updates itself in one click (press `U` while recording)
 
 ---
 
@@ -57,6 +66,7 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
    - Install Homebrew (macOS package manager) if not already present
    - Install Python 3 via Homebrew
    - Install the required Python packages (sounddevice, soundfile, numpy, shazamio, psutil)
+   - Install **imagesnap** via Homebrew (for optional DJ webcam photos)
    - Create the **`Start simplerec.command`** file in the same folder
 6. When done, press **ENTER** to close the Terminal window
 
@@ -72,6 +82,7 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
    - **How many minutes to record?** — enter a number between 1 and 120
    - **Filename prefix** — enter a label for your files (e.g. `Party2026_`) or press ENTER to skip
    - **Output folder** — confirm the suggested folder or enter your own path
+   - **DJ webcam photos** — choose whether to take a photo every 15 min to identify DJs
    - **Input device** — choose your microphone or audio interface from the list
 6. A 5-second preview runs so you can check your audio levels
 7. Recording starts automatically after the preview
@@ -118,19 +129,32 @@ There are two ways to update to the latest version:
 
 ## Output Files
 
-All files are saved to `~/simplerec - recordings` by default (created automatically). You can choose a different folder at startup.
+All files are saved to `~/simplerec - recordings` by default. You can choose a different root folder at startup.
+
+**Each recording segment gets its own subfolder** named `YYYYMMDD-HHMM` (the segment start time). All files belonging to that segment are saved inside it:
 
 | File | Description |
 |------|-------------|
-| `[prefix]YYYYMMDD-startHHMM-endHHMM.m4a` | Audio recording segment |
-| `[prefix]YYYYMMDD-startHHMM-endHHMM.txt`  | Playlist for that segment (CSV-style: time;elapsed;artist;title;genre;year) |
+| `YYYYMMDD-HHMM/[prefix]YYYYMMDD-startHHMM-endHHMM.m4a` | Audio recording |
+| `YYYYMMDD-HHMM/[prefix]YYYYMMDD-startHHMM-endHHMM.txt` | Playlist (CSV: time;elapsed;artist;title;genre;year) |
+| `YYYYMMDD-HHMM/[prefix]photo_YYYYMMDD-HHMMSS.jpg` | DJ webcam photo (if enabled) |
 
-While a segment is in progress, a temporary live-status file `[prefix]current_song_YYYYMMDD-HHMM.txt` exists and is updated continuously. It is **removed automatically** as soon as the segment is saved — only the per-segment playlist `.txt` and `.m4a` files remain.
+While a segment is in progress, a temporary `[prefix]current_song_*.txt` live-status file is also written to the segment folder. It is **removed automatically** when the segment is saved.
 
-**Example** with prefix `Party2026_` and a recording started at 10:30:
+**Example** with prefix `Party2026_`, root folder `~/simplerec - recordings`, recording started at 22:30:
 ```
-Party2026_20260520-start1030-end1130.m4a
-Party2026_20260520-start1030-end1130.txt
+~/simplerec - recordings/
+└── 20260520-2230/
+    ├── Party2026_20260520-start2230-end2330.m4a
+    ├── Party2026_20260520-start2230-end2330.txt
+    └── Party2026_photo_20260520-223000.jpg
+```
+
+When the segment duration is reached, a new subfolder is created for the next segment:
+```
+└── 20260520-2330/
+    ├── Party2026_20260520-start2330-end0030.m4a
+    └── ...
 ```
 
 In **PLAYLIST-ONLY** mode (`P`) no audio file is written, only the playlist `.txt`.
@@ -173,11 +197,18 @@ simplerec is a command-line audio recorder for macOS with the following built-in
 - Requires an active internet connection; if the connection is unavailable the recognition retries silently without interrupting recording
 
 **Session management**
-- Asks for recording duration (1–120 min) and a filename prefix at startup
+- Asks for recording duration (1–120 min), filename prefix, DJ photo preference, and input device at startup
 - Automatically saves the current segment and starts a new one when the duration is reached
-- Each segment produces its own `.m4a` audio file and matching `.txt` playlist file
+- **Each segment gets its own `YYYYMMDD-HHMM` subfolder** — all files (`.m4a`, `.txt`, photos) are saved inside it
 - The live `current_song_*.txt` status file is auto-deleted after each segment is saved
-- All output files are saved to the same folder
+
+**DJ webcam photos**
+- Optional feature: asked at startup whether to enable
+- Takes a photo every 15 minutes using the built-in webcam via `imagesnap`
+- Saved as `[prefix]photo_YYYYMMDD-HHMMSS.jpg` in the current segment subfolder
+- 5-second countdown shown in the UI (blinking red “SMILE IN X seconds!”)
+- Status shown in the UI: `DJ PIC: ON / OFF`
+- Requires `imagesnap` (installed automatically by the installer via Homebrew)
 
 **Notes**
 - Requires macOS (uses the built-in `afconvert` tool for M4A encoding)
@@ -188,9 +219,10 @@ simplerec is a command-line audio recorder for macOS with the following built-in
 
 ## Requirements
 
-- macOS (Intel or Apple Silicon, macOS 10.15+)
+- macOS (Intel or Apple Silicon, macOS 10.15 Catalina or later)
 - Python 3.8 or later (installed automatically by the installer)
 - Internet connection (for song recognition)
 - `psutil` — optional, enables CPU/RAM display in the UI (installed automatically)
 - `shazamio` — optional, enables song recognition (installed automatically)
+- `imagesnap` — optional, enables DJ webcam photos (installed automatically via Homebrew)
 
