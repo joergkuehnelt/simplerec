@@ -1198,25 +1198,31 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     def _key_btn(k: str) -> str:
         return f"{BG_WHITE}{FG_BLACK}{BOLD} {k} {RESET}{BG_AMBER}{FG_BLACK}"
 
-    bar = (
+    bar1 = (
         f"  {_key_btn('S')}=STOP (pause)  "
         f"{_key_btn('R')}=RESTART (new file)  "
-        f"{_key_btn('Q')}=SAVE & QUIT  "
-        f"{_key_btn('P')}=PLAYLIST ONLY  "
+        f"{_key_btn('Q')}=SAVE & QUIT"
+    )
+    pad1 = " " * max(0, W - _visible_len(bar1))
+    print(f"{BG_AMBER}{FG_BLACK}{bar1}{pad1}{RESET}")
+
+    bar2 = (
+        f"  {_key_btn('P')}=PLAYLIST ONLY  "
         f"{_key_btn('U')}=UPDATE"
     )
-    pad = " " * max(0, W - _visible_len(bar))
-    print(f"{BG_AMBER}{FG_BLACK}{bar}{pad}{RESET}")
+    pad2 = " " * max(0, W - _visible_len(bar2))
+    print(f"{BG_AMBER}{FG_BLACK}{bar2}{pad2}{RESET}")
+
     if auto_gain_on:
-        bar2 = f"  {_key_btn('A')}=AUTOGAIN: ON   (press [A] to switch off and set manually)"
+        bar3 = f"  {_key_btn('A')}=AUTOGAIN: ON   (press [A] to switch off and set manually)"
     else:
-        bar2 = (
+        bar3 = (
             f"  {_key_btn('A')}=AUTOGAIN: OFF  "
             f"{_key_btn('2')}=20%  {_key_btn('4')}=40%  {_key_btn('6')}=60%  "
             f"{_key_btn('8')}=80%  {_key_btn('0')}=100%"
         )
-    pad2 = " " * max(0, W - _visible_len(bar2))
-    print(f"{BG_AMBER}{FG_BLACK}{bar2}{pad2}{RESET}")
+    pad3 = " " * max(0, W - _visible_len(bar3))
+    print(f"{BG_AMBER}{FG_BLACK}{bar3}{pad3}{RESET}")
 
 
 def main():
