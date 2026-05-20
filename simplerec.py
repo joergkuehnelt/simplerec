@@ -237,7 +237,7 @@ def require_macos_tools():
 
 
 def default_output_dir() -> Path:
-    return Path.home() / "Music" / "Recordings"
+    return Path.home() / "simplerec - recordings"
 
 
 DEFAULT_DURATION_MINUTES = 60
