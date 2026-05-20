@@ -403,8 +403,6 @@ class RecorderState:
     songrec_last_tagid: str = ""
     playlist_path: Optional[Path] = None
     playlist_last_tagid: str = ""
-    playlist_last_artist: str = ""
-    playlist_last_title: str = ""
     playlist_last_key: tuple = ("", "")
     playlist_last_was_empty: bool = False
     filename_prefix: str = ""
@@ -499,8 +497,6 @@ class RecorderState:
                     return
                 line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title};{genre};{year}\n"
                 self.playlist_last_tagid = tagid
-                self.playlist_last_artist = artist
-                self.playlist_last_title = title
                 self.playlist_last_key = new_key
                 self.playlist_last_was_empty = False
             else:
@@ -832,8 +828,6 @@ class RecorderState:
             self.segment_start_monotonic = time.monotonic()
             self.playlist_path = self.output_dir / f"{self.filename_prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.playlist.txt"
             self.playlist_last_tagid = ""
-            self.playlist_last_artist = ""
-            self.playlist_last_title = ""
             self.playlist_last_key = ("", "")
             self.playlist_last_was_empty = False
             if self.playlist_only:
@@ -1022,15 +1016,15 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
     slot = total / cols
     start_t = now - total
     samples = sorted(history, key=lambda e: e[0])
+    si = 0
+    n_samples = len(samples)
     values: list[Optional[int]] = []
+    latest: Optional[int] = None
     for c in range(cols):
         t_end = start_t + (c + 1) * slot
-        latest: Optional[int] = None
-        for ts, pct in samples:
-            if ts <= t_end:
-                latest = pct
-            else:
-                break
+        while si < n_samples and samples[si][0] <= t_end:
+            latest = samples[si][1]
+            si += 1
         values.append(latest)
     out: list[str] = []
     # Row 0 = 100% (top), Row 1 = 80%, Row 2 = 60%, Row 3 = 40%, Row 4 = 20%
@@ -1080,7 +1074,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         song_genre = state.songrec_current_genre
         song_album = state.songrec_current_album
         song_year  = state.songrec_current_year
-        song_fname = state._song_status_fname()
         playlist_only = state.playlist_only
         max_record_seconds = state.max_record_seconds
         session_start_mono = state.session_start_monotonic
@@ -1089,7 +1082,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     db_r = linear_to_dbfs(rms_r)
     ch_label = "Stereo" if channels >= 2 else "Mono"
     sys_txt = ""
-    if _PSUTIL_AVAILABLE and _psutil is not None:
+    if _psutil is not None:
         cpu_pct = _psutil.cpu_percent()
         ram_pct = _psutil.virtual_memory().percent
         sys_txt = f"    CPU:{cpu_pct:5.1f}%  RAM:{ram_pct:5.1f}%"
@@ -1257,6 +1250,10 @@ def main():
     state.start_writer()
     state.start_converter()
     state.start_stream()
+    _set_input_gain(AUTO_GAIN_TARGET)
+    state.gain_current_pct = AUTO_GAIN_TARGET
+    with state.lock:
+        state.gain_history.append((time.monotonic(), AUTO_GAIN_TARGET))
     state.start_songrec()
     preview_end = time.monotonic() + PREVIEW_SECONDS
 
