@@ -459,11 +459,17 @@ class RecorderState:
             if path is None:
                 return
             if title and artist:
-                # deduplicate: by tagid when available, else by artist+title
-                if tagid and tagid == self.playlist_last_tagid:
-                    return  # same song (tagid match) – skip
-                if not tagid and artist == self.playlist_last_artist and title == self.playlist_last_title:
-                    return  # same song (artist/title match, no tagid) – skip
+                # deduplicate: either by tagid OR by artist+title match
+                same_tag = bool(tagid) and tagid == self.playlist_last_tagid
+                same_name = (
+                    artist == self.playlist_last_artist
+                    and title == self.playlist_last_title
+                )
+                if same_tag or same_name:
+                    # refresh tagid in case Shazam newly provides one for the same song
+                    if tagid and not self.playlist_last_tagid:
+                        self.playlist_last_tagid = tagid
+                    return
                 line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title};{genre};{year}\n"
                 self.playlist_last_tagid = tagid
                 self.playlist_last_artist = artist
@@ -797,6 +803,17 @@ class RecorderState:
             self.current_file = new_file
             self.mode = "recording"
 
+    def _remove_song_status_file(self) -> None:
+        """Delete the live current_song_*.txt status file (kept only while recording)."""
+        try:
+            with self.lock:
+                fname = self._song_status_fname()
+            f = self.output_dir / fname
+            if f.exists():
+                f.unlink()
+        except OSError:
+            pass
+
     def stop_and_save(self) -> Optional[Path]:
         playlist_branch = False
         start_wall_pb: Optional[dt.datetime] = None
@@ -831,6 +848,7 @@ class RecorderState:
                     playlist_temp_pb.rename(playlist_final)
                 except OSError:
                     pass
+            self._remove_song_status_file()
             return None
         self.writer_q.join()
         with self.lock:
@@ -862,6 +880,7 @@ class RecorderState:
             except OSError:
                 pass
         self.convert_q.put((tmp_name, final_name))
+        self._remove_song_status_file()
         return final_name
 
     def elapsed_segment_seconds(self) -> float:
