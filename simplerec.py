@@ -211,11 +211,15 @@ def default_output_dir() -> Path:
     return Path.home() / "Music" / "Recordings"
 
 
+DEFAULT_DURATION_MINUTES = 60
+
 def ask_recording_minutes() -> int:
     print("\nRecording Duration")
     print("------------------")
     while True:
-        raw = input("How many minutes to record? (1–120): ").strip()
+        raw = input(f"How many minutes to record? (1–120) [default: {DEFAULT_DURATION_MINUTES}]: ").strip()
+        if raw == "":
+            return DEFAULT_DURATION_MINUTES
         if raw.isdigit():
             val = int(raw)
             if 1 <= val <= 120:
@@ -428,9 +432,7 @@ class RecorderState:
                 return  # consecutive no-match – skip
             line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};;;;\n"
             with self.lock:
-                self.playlist_last_tagid = ""
-                self.playlist_last_artist = ""
-                self.playlist_last_title = ""
+                # keep last song info so the same song is still skipped after a no-match
                 self.playlist_last_was_empty = True
         try:
             with open(path, "a", encoding="utf-8") as f:
