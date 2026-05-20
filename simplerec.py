@@ -332,6 +332,9 @@ class RecorderState:
     songrec_total_checks: int = 0
     songrec_next_check_at: float = 0.0
     songrec_last_tagid: str = ""
+    playlist_path: Optional[Path] = None
+    playlist_last_tagid: str = ""
+    playlist_last_was_empty: bool = False
     filename_prefix: str = ""
     max_record_seconds: Optional[float] = None
     session_start_monotonic: Optional[float] = None
@@ -359,6 +362,37 @@ class RecorderState:
                 f"Checks       : {self.songrec_total_checks}\n"
             )
         path.write_text(content, encoding="utf-8")
+
+    def append_to_playlist(self, title, artist, tagid: str, check_time: dt.datetime, elapsed: float):
+        """Append one entry (or blank line) to the segment playlist .txt file."""
+        with self.lock:
+            path = self.playlist_path
+            last_tagid = self.playlist_last_tagid
+            last_was_empty = self.playlist_last_was_empty
+        if path is None:
+            return
+        if title and artist:
+            if tagid and tagid == last_tagid:
+                return  # duplicate recognition – skip
+            line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title}\n"
+            try:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(line)
+            except OSError:
+                return
+            with self.lock:
+                self.playlist_last_tagid = tagid
+                self.playlist_last_was_empty = False
+        else:
+            if last_was_empty:
+                return  # no consecutive blank lines
+            try:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write("\n")
+            except OSError:
+                return
+            with self.lock:
+                self.playlist_last_was_empty = True
 
     async def _recognize_file(self, path: Path):
         if not self.songrec_enabled or Shazam is None:
@@ -408,6 +442,9 @@ class RecorderState:
                         continue
                     sf.write(str(snippet_path), audio, self.samplerate, subtype="PCM_16")
                     now = dt.datetime.now()
+                    with self.lock:
+                        seg_start_mono = self.segment_start_monotonic
+                    elapsed_at_check = max(0.0, time.monotonic() - seg_start_mono) if seg_start_mono is not None else 0.0
                     title, artist, status, tagid = asyncio.run(self._recognize_file(snippet_path))
                     with self.lock:
                         self.songrec_last_check = now
@@ -419,6 +456,7 @@ class RecorderState:
                             self.songrec_current_artist = artist
                             self.songrec_last_match = now
                     self.write_song_status_file()
+                    self.append_to_playlist(title, artist, tagid or "", now, elapsed_at_check)
                 except Exception as exc:
                     with self.lock:
                         self.songrec_last_check = dt.datetime.now()
@@ -552,6 +590,9 @@ class RecorderState:
             self.current_temp_name = tmp_name
             self.segment_start_wall = start_wall
             self.segment_start_monotonic = time.monotonic()
+            self.playlist_path = self.output_dir / f".{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.playlist.txt"
+            self.playlist_last_tagid = ""
+            self.playlist_last_was_empty = False
             self.mode = "recording"
 
     def stop_and_save(self) -> Optional[Path]:
@@ -580,6 +621,15 @@ class RecorderState:
         final_name = self.output_dir / f"{prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M}-end{end_wall:%H%M}.m4a"
         if final_name.exists():
             final_name = final_name.with_name(final_name.stem + dt.datetime.now().strftime("-%H%M%S") + final_name.suffix)
+        with self.lock:
+            playlist_temp = self.playlist_path
+            self.playlist_path = None
+        if playlist_temp is not None and playlist_temp.exists():
+            playlist_final = final_name.with_suffix(".txt")
+            try:
+                playlist_temp.rename(playlist_final)
+            except OSError:
+                pass
         self.convert_q.put((tmp_name, final_name))
         return final_name
 
@@ -682,9 +732,9 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(f"{DIM}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS   Pending Save Jobs: {pending_conversions}{RESET}")
     print()
     countdown = max(0, int(song_next_at - time.monotonic()))
-    tagid_txt = f"  ID:{_trunc(song_tagid, 20)}" if song_tagid else ""
+    shazam_ok_txt = "  Shazam ok" if song_tagid else ""
     print(f"{AMBER}{BOLD}Song:{RESET} {GREEN}{BOLD}{_trunc(song_artist + ' - ' + song_title, 74)}{RESET}")
-    print(f"{DIM}Check: {song_last_check}  Match: {song_last_match}  Next: {countdown:2d}s{tagid_txt}{RESET}")
+    print(f"{DIM}Check: {song_last_check}  Match: {song_last_match}  Next: {countdown:2d}s{shazam_ok_txt}{RESET}")
     with state.lock:
         song_fname = state._song_status_fname()
     print(f"{DIM}List : {_trunc(str(outdir / song_fname), 73)}{RESET}")
