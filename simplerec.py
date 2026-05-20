@@ -52,7 +52,7 @@ PREVIEW_SECONDS = 5
 SEGMENT_SECONDS = 60 * 60
 DEVICE_PROBE_SECONDS = 0.18
 UI_REFRESH_SECONDS = 0.08
-METER_WIDTH = 44
+METER_WIDTH = 38
 PEAK_HOLD_SECONDS = 1.2
 CLIP_HOLD_SECONDS = 2.0
 CLIP_THRESHOLD = 0.995
@@ -609,6 +609,14 @@ def select_input_device() -> tuple[int, int, int, str]:
         print("Invalid input. Please choose one of the listed numbers.")
 
 
+def _trunc(s: str, width: int = 80) -> str:
+    """Truncate a plain-text string to `width` visible chars, adding … if needed."""
+    s = str(s)
+    if len(s) <= width:
+        return s
+    return s[:width - 1] + "…"
+
+
 def render_ui(state: RecorderState, device_name: str, preview_end: Optional[float]):
     with state.lock:
         mode = state.mode
@@ -635,16 +643,14 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     else:
         status_label = f"{AMBER}{BOLD}‖ PAUSE{RESET}"
     clear_screen()
-    print(f"{AMBER}{BOLD}  ███████╗██╗███╗   ███╗██████╗ ██╗     ███████╗██████╗ ███████╗ ██████╗{RESET}")
-    print(f"{AMBER}{BOLD}  ██╔════╝██║████╗ ████║██╔══██╗██║     ██╔════╝██╔══██╗██╔════╝██╔════╝{RESET}")
-    print(f"{AMBER}{BOLD}  ███████╗██║██╔████╔██║██████╔╝██║     █████╗  ██████╔╝█████╗  ██║{RESET}")
-    print(f"{AMBER}{BOLD}  ╚════██║██║██║╚██╔╝██║██╔═══╝ ██║     ██╔══╝  ██╔══██╗██╔══╝  ██║{RESET}")
-    print(f"{AMBER}{BOLD}  ███████║██║██║ ╚═╝ ██║██║     ███████╗███████╗██║  ██║███████╗╚██████╗{RESET}")
-    print(f"{AMBER}{BOLD}  ╚══════╝╚═╝╚═╝     ╚═╝╚═╝     ╚══════╝╚══════╝╚═╝  ╚═╝╚══════╝ ╚═════╝  {DIM}-beta{RESET}")
+    print(f"{AMBER}{BOLD} _____ ___ __  __ ___ _    ___ ___ ___  {RESET}")
+    print(f"{AMBER}{BOLD}/ __| | |  \\/  | _ \\ |  | __| _ \\ __| {RESET}")
+    print(f"{AMBER}{BOLD}\\__ \\ | || |\\/| |  _/ |__| _||   / _|  {RESET}")
+    print(f"{AMBER}{BOLD}|___/___|_|  |_|_| |____|___|_|_\\___|  {DIM}-beta{RESET}")
     print()
-    print(f"{AMBER}Device : {device_name}{RESET}")
-    print(f"{AMBER}Folder : {outdir}{RESET}")
-    print(f"Status : {status_label}    {AMBER}Length : {human_duration(elapsed)}{RESET}    {AMBER}Channels: {channels}{RESET}")
+    print(f"{AMBER}Device : {_trunc(device_name, 71)}{RESET}")
+    print(f"{AMBER}Folder : {_trunc(str(outdir), 71)}{RESET}")
+    print(f"Status : {status_label}    {AMBER}Length : {human_duration(elapsed)}{RESET}    {AMBER}Ch: {channels}{RESET}")
     if clip_active:
         print(f"{RED}{BOLD}WARNING: CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}")
     if start_wall and mode == "recording":
@@ -660,11 +666,11 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(f"{AMBER}R:{RESET} [{colored_meter(db_r, hold_r)}] {GREEN}{db_r:6.1f} dBFS{RESET}   peak={peak_r:.3f}")
     print(f"{DIM}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS   Pending Save Jobs: {pending_conversions}{RESET}")
     print()
-    print(f"{AMBER}{BOLD}Song:{RESET} {GREEN}{BOLD}{song_artist} - {song_title}{RESET}")
-    print(f"{DIM}Last check: {song_last_check}   Last match: {song_last_match}   Status: {song_status}{RESET}")
+    print(f"{AMBER}{BOLD}Song:{RESET} {GREEN}{BOLD}{_trunc(song_artist + ' - ' + song_title, 74)}{RESET}")
+    print(f"{DIM}Check: {song_last_check}  Match: {song_last_match}  {_trunc('Status: ' + song_status, 55)}{RESET}")
     with state.lock:
         song_fname = state._song_status_fname()
-    print(f"{DIM}Playlist : {outdir / song_fname}{RESET}")
+    print(f"{DIM}List : {_trunc(str(outdir / song_fname), 73)}{RESET}")
     print()
     print(f"{AMBER}Keys   :{RESET} {BOLD}S{RESET}=STOP  {BOLD}R{RESET}=RESTART  {BOLD}Q{RESET}=Save and quit")
     print(f"{DIM}Help   : run with --help or --help-messages for usage details{RESET}")
