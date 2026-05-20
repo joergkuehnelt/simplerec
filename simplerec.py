@@ -178,10 +178,8 @@ def classify_level(rms: float) -> str:
 
 
 def bar_color(index: int, width: int) -> str:
-    if index < int(width * 0.68):
-        return GREEN
     if index < int(width * 0.88):
-        return YELLOW
+        return AMBER
     return RED
 
 
