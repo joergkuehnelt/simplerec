@@ -379,6 +379,7 @@ class RecorderState:
     gain_weak_since: Optional[float] = None
     gain_last_action: str = ""  # for UI display
     gain_last_action_at: float = 0.0  # monotonic time of last action message
+    auto_gain_enabled: bool = True  # toggle via [A]
     gain_history: deque = field(default_factory=lambda: deque(maxlen=GAIN_HISTORY_MAX))
     gain_current_pct: Optional[int] = None
     gain_last_poll: float = 0.0
@@ -631,8 +632,29 @@ class RecorderState:
             self.gain_last_action_at = now
             self.gain_history.append((now, new_pct))
 
+    def append_gain_event_to_playlist(self, msg: str) -> None:
+        """Append a timestamped clip/adjust event line to the playlist file."""
+        with self.lock:
+            path = self.playlist_path
+        if path is None:
+            return
+        now_wall = dt.datetime.now()
+        line = f"{now_wall.strftime('%H:%M:%S')};;CLIP-ADJUST;{msg};;\n"
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line)
+        except OSError:
+            pass
+
+    def manual_set_gain(self, pct: int) -> None:
+        """Manually set input gain (when autogain is disabled)."""
+        now = time.monotonic()
+        self._apply_gain(now, pct, f"manual → {pct}%")
+
     def check_auto_gain(self) -> None:
         """Raise or lower macOS input gain depending on signal level."""
+        if not self.auto_gain_enabled:
+            return
         now = time.monotonic()
         if now - self.gain_last_adjust < AUTO_GAIN_COOLDOWN:
             return
@@ -649,7 +671,9 @@ class RecorderState:
             base = cur if cur is not None else AUTO_GAIN_TARGET
             new_pct = max(AUTO_GAIN_MIN, base - AUTO_GAIN_STEP_DOWN)
             if cur is None or new_pct < cur:
-                self._apply_gain(now, new_pct, f"↓ clipping danger → reduced to {new_pct}%")
+                msg = f"↓ clipping danger → reduced to {new_pct}%"
+                self._apply_gain(now, new_pct, msg)
+                self.append_gain_event_to_playlist(msg)
             return
         # Weak signal handling
         if peak_db < AUTO_GAIN_VERY_WEAK_DB:
@@ -970,6 +994,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         gain_action_at = state.gain_last_action_at
         gain_history = list(state.gain_history)
         gain_current = state.gain_current_pct
+        auto_gain_on = state.auto_gain_enabled
         outdir = state.output_dir
         channels = state.channels
         song_title = state.songrec_current_title
@@ -1042,11 +1067,12 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
 
     # ── Box · Auto-gain history ─────────────────────────────────────────────
     cur_txt = f"  (now: {gain_current}%)" if gain_current is not None else ""
+    mode_tag = f"{GREEN}[AUTO]{RESET}" if auto_gain_on else f"{YELLOW}[MANUAL]{RESET}"
     if gain_action and (time.monotonic() - gain_action_at) <= AUTO_GAIN_MSG_TTL:
         action_txt = gain_action
     else:
         action_txt = "(idle)"
-    status_line = f"{RED}{BOLD}Auto-gain: {action_txt}{cur_txt}{RESET}"
+    status_line = f"{RED}{BOLD}Auto-gain:{RESET} {mode_tag} {RED}{BOLD}{action_txt}{cur_txt}{RESET}"
     grid_rows = _render_gain_grid(gain_history, time.monotonic())
     row_labels = ["100%", " 80%", " 60%", " 40%", " 20%"]
     print(_box_top(W))
@@ -1101,6 +1127,16 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     )
     pad = " " * max(0, W - _visible_len(bar))
     print(f"{BG_AMBER}{FG_BLACK}{bar}{pad}{RESET}")
+    if auto_gain_on:
+        bar2 = f"  {_key_btn('A')}=AUTOGAIN: ON   (press [A] to switch off and set manually)"
+    else:
+        bar2 = (
+            f"  {_key_btn('A')}=AUTOGAIN: OFF  "
+            f"{_key_btn('2')}=20%  {_key_btn('4')}=40%  {_key_btn('6')}=60%  "
+            f"{_key_btn('8')}=80%  {_key_btn('0')}=100%"
+        )
+    pad2 = " " * max(0, W - _visible_len(bar2))
+    print(f"{BG_AMBER}{FG_BLACK}{bar2}{pad2}{RESET}")
 
 
 def main():
@@ -1194,6 +1230,16 @@ def main():
                         state.playlist_only = not state.playlist_only
                     state.start_segment()
                     time.sleep(0.2)
+                elif key == "a":
+                    with state.lock:
+                        state.auto_gain_enabled = not state.auto_gain_enabled
+                        state.gain_last_action = (
+                            "AUTOGAIN ON" if state.auto_gain_enabled else "AUTOGAIN OFF (manual)"
+                        )
+                        state.gain_last_action_at = time.monotonic()
+                elif key in ("0", "2", "4", "6", "8") and not state.auto_gain_enabled:
+                    pct = {"0": 100, "2": 20, "4": 40, "6": 60, "8": 80}[key]
+                    state.manual_set_gain(pct)
                 elif key == "q":
                     if state.mode in ("recording", "playlist"):
                         saved = state.stop_and_save()
