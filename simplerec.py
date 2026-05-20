@@ -1041,7 +1041,7 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
             if v is None:
                 row_chars.append(f"{DIM}{color}·{RESET}")
                 continue
-            bucket = min(rows - 1, max(0, int(v / (100.0 / rows))))
+            bucket = min(rows - 1, max(0, (max(0, v - 1) * rows) // 100))
             gain_row = rows - 1 - bucket  # row 0 = top = highest gain
             if r == gain_row:
                 row_chars.append(f"{color}{BOLD}●{RESET}")
