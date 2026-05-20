@@ -21,9 +21,7 @@ import time
 import queue
 import shutil
 import signal
-import select
 import termios
-import tty
 import threading
 import subprocess
 import datetime as dt
@@ -80,7 +78,13 @@ class KeyReader:
     def __enter__(self):
         self.fd = sys.stdin.fileno()
         self.old = termios.tcgetattr(self.fd)
-        tty.setcbreak(self.fd)
+        new = termios.tcgetattr(self.fd)
+        # Disable canonical mode and echo; keep OPOST so \n → \r\n still works.
+        # TCSAFLUSH flushes any buffered Enter presses from the setup prompts.
+        new[3] &= ~(termios.ICANON | termios.ECHO | termios.IEXTEN)
+        new[6][termios.VMIN] = 0   # non-blocking read
+        new[6][termios.VTIME] = 0
+        termios.tcsetattr(self.fd, termios.TCSAFLUSH, new)
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -88,10 +92,8 @@ class KeyReader:
         return False
 
     def get_key(self):
-        dr, _, _ = select.select([sys.stdin], [], [], 0)
-        if dr:
-            return sys.stdin.read(1).lower()
-        return None
+        ch = os.read(self.fd, 1)
+        return ch.decode("utf-8", errors="ignore").lower() if ch else None
 
 
 def print_help_messages() -> None:
