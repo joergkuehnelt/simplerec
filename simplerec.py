@@ -395,7 +395,7 @@ class RecorderState:
 
     def append_to_playlist(self, title, artist, tagid: str, check_time: dt.datetime,
                             elapsed: float, genre: str = "", year: str = ""):
-        """Append one entry (or blank line) to the segment playlist .txt file."""
+        """Append one entry to the segment playlist .txt file, skipping duplicates."""
         with self.lock:
             path = self.playlist_path
             last_tagid = self.playlist_last_tagid
@@ -404,26 +404,23 @@ class RecorderState:
             return
         if title and artist:
             if tagid and tagid == last_tagid:
-                return  # duplicate recognition – skip
+                return  # same song recognised again – skip
             line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};{artist};{title};{genre};{year}\n"
-            try:
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write(line)
-            except OSError:
-                return
             with self.lock:
                 self.playlist_last_tagid = tagid
                 self.playlist_last_was_empty = False
         else:
             if last_was_empty:
-                return  # no consecutive blank lines
-            try:
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write("\n")
-            except OSError:
-                return
+                return  # consecutive no-match – skip
+            line = f"{check_time.strftime('%H:%M:%S')};{human_duration(elapsed)};;;;\n"
             with self.lock:
+                self.playlist_last_tagid = ""
                 self.playlist_last_was_empty = True
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line)
+        except OSError:
+            pass
 
     async def _recognize_file(self, path: Path):
         if not self.songrec_enabled or Shazam is None:
