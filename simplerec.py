@@ -69,6 +69,7 @@ GAIN_HISTORY_MAX        = 256   # max samples kept in history deque
 SONGREC_WINDOW_SECONDS = 5
 SONGREC_INTERVAL_SECONDS = 15
 SONGREC_TEMP_SNIPPET = ".songrec_snippet.wav"
+PHOTO_INTERVAL_SECONDS = 900   # 15 minutes between webcam snapshots
 
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -387,6 +388,8 @@ class RecorderState:
     songrec_enabled: bool = SONGREC_AVAILABLE
     songrec_stop: threading.Event = field(default_factory=threading.Event)
     songrec_thread: Optional[threading.Thread] = None
+    photo_stop: threading.Event = field(default_factory=threading.Event)
+    photo_thread: Optional[threading.Thread] = None
     recent_blocks: deque = field(default_factory=deque)
     songrec_last_check: Optional[dt.datetime] = None
     songrec_last_match: Optional[dt.datetime] = None
@@ -619,6 +622,40 @@ class RecorderState:
         if self.songrec_thread is not None:
             self.songrec_thread.join(timeout=3)
             self.songrec_thread = None
+
+    def start_photo(self) -> None:
+        """Start background thread that takes a webcam photo every PHOTO_INTERVAL_SECONDS."""
+        if shutil.which("imagesnap") is None:
+            return  # imagesnap not installed – silently skip
+        self.photo_stop.clear()
+        def _runner():
+            # Wait for the first interval before taking the first shot
+            self.photo_stop.wait(PHOTO_INTERVAL_SECONDS)
+            while not self.photo_stop.is_set():
+                with self.lock:
+                    out_dir = self.output_dir
+                    prefix  = self.filename_prefix or ""
+                if out_dir is not None:
+                    ts   = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+                    dest = out_dir / f"{prefix}photo_{ts}.jpg"
+                    try:
+                        subprocess.run(
+                            ["imagesnap", "-w", "1", str(dest)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=15,
+                        )
+                    except Exception:
+                        pass
+                self.photo_stop.wait(PHOTO_INTERVAL_SECONDS)
+        self.photo_thread = threading.Thread(target=_runner, daemon=True)
+        self.photo_thread.start()
+
+    def stop_photo(self) -> None:
+        self.photo_stop.set()
+        if self.photo_thread is not None:
+            self.photo_thread.join(timeout=5)
+            self.photo_thread = None
 
     def audio_callback(self, indata, frames, time_info, status):
         arr = indata if indata.ndim == 2 else indata.reshape(-1, 1)
@@ -1271,6 +1308,7 @@ def main():
         with state.lock:
             state.gain_history.append((time.monotonic(), AUTO_GAIN_TARGET))
         state.start_songrec()
+        state.start_photo()
         preview_end = time.monotonic() + PREVIEW_SECONDS
 
         with KeyReader() as keys:
@@ -1374,6 +1412,7 @@ def main():
                 print(f"Segment saved: {saved.name}")
     finally:
         state.stop_songrec()
+        state.stop_photo()
         state.stop_stream()
         state.stop_writer()
         print("Waiting for pending M4A conversions …")

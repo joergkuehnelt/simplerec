@@ -89,6 +89,17 @@ PY=$(command -v python3)
 
 # ── ffmpeg is NOT needed — simplerec uses macOS built-in afconvert ────────────
 
+# ── imagesnap (optional — for webcam snapshots every 15 min) ─────────────────
+echo
+info "Checking imagesnap …"
+if command -v imagesnap &>/dev/null; then
+    success "imagesnap already installed."
+else
+    warn "Installing imagesnap via Homebrew (optional – for webcam snapshots) …"
+    brew install imagesnap
+    success "imagesnap installed."
+fi
+
 # ── Python packages ───────────────────────────────────────────────────────────
 echo
 info "Installing Python packages …"
