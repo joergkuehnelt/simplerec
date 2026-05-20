@@ -1,5 +1,7 @@
 # simplerec
 
+![simplerec screenshot](screenshot.png)
+
 A macOS audio recorder that captures stereo sound in M4A format with integrated song recognition via Shazam and optional DJ webcam photos. Set how long you want to record, give your files a prefix, and hit go — simplerec handles the rest.
 
 **What simplerec does:**
