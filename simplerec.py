@@ -754,10 +754,12 @@ class RecorderState:
         """Append a timestamped clip/adjust event line to the playlist file."""
         with self.lock:
             path = self.playlist_path
+            seg_start = self.segment_start_monotonic
         if path is None:
             return
         now_wall = dt.datetime.now()
-        line = f"{now_wall.strftime('%H:%M:%S')};;CLIP-ADJUST;{msg};;\n"
+        elapsed = max(0.0, time.monotonic() - seg_start) if seg_start is not None else 0.0
+        line = f"{now_wall.strftime('%H:%M:%S')};{human_duration(elapsed)};CLIP-ADJUST;{msg};;\n"
         try:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(line)
