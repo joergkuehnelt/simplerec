@@ -26,6 +26,7 @@ import threading
 import subprocess
 import datetime as dt
 import asyncio
+import re
 import argparse
 from collections import deque
 from dataclasses import dataclass, field
@@ -69,6 +70,9 @@ GREEN = "\033[38;5;46m"
 YELLOW = "\033[38;5;226m"
 RED = "\033[38;5;196m"
 GREY = "\033[38;5;240m"
+BG_AMBER  = "\033[48;5;214m"   # amber background (for key bar)
+BG_WHITE  = "\033[107m"        # bright-white background (for highlighted keys)
+FG_BLACK  = "\033[30m"         # black foreground (readable on both amber/white bg)
 
 
 class KeyReader:
@@ -356,6 +360,7 @@ class RecorderState:
     playlist_last_was_empty: bool = False
     filename_prefix: str = ""
     max_record_seconds: Optional[float] = None
+    playlist_only: bool = False
     session_start_monotonic: Optional[float] = None
     session_start_wall: Optional[dt.datetime] = None
 
@@ -623,13 +628,16 @@ class RecorderState:
             if self.session_start_monotonic is None:
                 self.session_start_monotonic = time.monotonic()
                 self.session_start_wall = start_wall
-            tmp_name = temp_wav_name(self.output_dir, start_wall)
-            self.current_temp_name = tmp_name
             self.segment_start_wall = start_wall
             self.segment_start_monotonic = time.monotonic()
             self.playlist_path = self.output_dir / f"{self.filename_prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.playlist.txt"
             self.playlist_last_tagid = ""
             self.playlist_last_was_empty = False
+            if self.playlist_only:
+                self.mode = "playlist"
+                return
+            tmp_name = temp_wav_name(self.output_dir, start_wall)
+            self.current_temp_name = tmp_name
         try:
             new_file = sf.SoundFile(str(tmp_name), mode="w", samplerate=self.samplerate, channels=self.channels, subtype="PCM_16")
         except Exception:
@@ -644,13 +652,40 @@ class RecorderState:
             self.mode = "recording"
 
     def stop_and_save(self) -> Optional[Path]:
+        playlist_branch = False
+        start_wall_pb: Optional[dt.datetime] = None
+        end_wall_pb: Optional[dt.datetime] = None
+        playlist_temp_pb: Optional[Path] = None
         with self.lock:
-            if self.current_file is None or self.segment_start_wall is None:
+            if self.mode == "playlist":
+                playlist_branch = True
+                self.mode = "paused"
+                self.segment_start_monotonic = None
+                end_wall_pb = dt.datetime.now()
+                start_wall_pb = self.segment_start_wall
+                self.segment_start_wall = None
+                playlist_temp_pb = self.playlist_path
+                self.playlist_path = None
+            elif self.current_file is None or self.segment_start_wall is None:
                 self.mode = "paused"
                 self.segment_start_monotonic = None
                 return None
-            self.mode = "paused"
-            self.segment_start_monotonic = None
+            else:
+                self.mode = "paused"
+                self.segment_start_monotonic = None
+        if playlist_branch:
+            if (playlist_temp_pb is not None and start_wall_pb is not None
+                    and playlist_temp_pb.exists()):
+                prefix = self.filename_prefix
+                playlist_final = self.output_dir / (
+                    f"{prefix}{start_wall_pb:%Y%m%d}"
+                    f"-start{start_wall_pb:%H%M}-end{end_wall_pb:%H%M}.txt"
+                )
+                try:
+                    playlist_temp_pb.rename(playlist_final)
+                except OSError:
+                    pass
+            return None
         self.writer_q.join()
         with self.lock:
             end_wall = dt.datetime.now()
@@ -683,7 +718,7 @@ class RecorderState:
 
     def elapsed_segment_seconds(self) -> float:
         with self.lock:
-            if self.mode == "recording" and self.segment_start_monotonic is not None:
+            if self.mode in ("recording", "playlist") and self.segment_start_monotonic is not None:
                 return max(0.0, time.monotonic() - self.segment_start_monotonic)
         return 0.0
 
@@ -740,6 +775,24 @@ def _trunc(s: str, width: int = 80) -> str:
     return s[:width - 1] + "…"
 
 
+_ANSI_RE = re.compile(r'\033\[[0-9;]*m')
+
+def _visible_len(s: str) -> int:
+    """Return the visible column-width of a string, ignoring ANSI escape codes."""
+    return len(_ANSI_RE.sub('', s))
+
+def _box_top(width: int = 80) -> str:
+    return f"{AMBER}╔{'═' * (width - 2)}╗{RESET}"
+
+def _box_bot(width: int = 80) -> str:
+    return f"{AMBER}╚{'═' * (width - 2)}╝{RESET}"
+
+def _box_row(content: str, width: int = 80) -> str:
+    inner = width - 4   # ║ <inner> ║
+    pad = max(0, inner - _visible_len(content))
+    return f"{AMBER}║{RESET} {content}{' ' * pad} {AMBER}║{RESET}"
+
+
 def render_ui(state: RecorderState, device_name: str, preview_end: Optional[float]):
     with state.lock:
         mode = state.mode
@@ -763,49 +816,92 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         song_album = state.songrec_current_album
         song_year  = state.songrec_current_year
         song_fname = state._song_status_fname()
-    elapsed = state.elapsed_segment_seconds() if mode == "recording" else 0.0
+        playlist_only = state.playlist_only
+    elapsed = state.elapsed_segment_seconds() if mode in ("recording", "playlist") else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
     if mode == "recording":
         status_label = f"{RED}{BOLD}● REC{RESET}"
+    elif mode == "playlist":
+        status_label = f"{GREEN}{BOLD}♪ PLAYLIST{RESET}"
     else:
         status_label = f"{AMBER}{BOLD}‖ PAUSE{RESET}"
+    W = 80
     clear_screen()
+
+    # ── Logo ────────────────────────────────────────────────────────────────
     print(f"{AMBER}{BOLD}   _____ ______  _______  __    __________  ____________{RESET}")
     print(f"{AMBER}{BOLD}  / ___//  _/  |/  / __ \\/ /   / ____/ __ \\/ ____/ ____/{RESET}")
     print(f"{AMBER}{BOLD}  \\__ \\ / // /|_/ / /_/ / /   / __/ / /_/ / __/ / /     {RESET}")
     print(f"{AMBER}{BOLD} ___/ // // /  / / ____/ /___/ /___/ _, _/ /___/ /___   {RESET}")
     print(f"{AMBER}{BOLD}/____/___/_/  /_/_/   /_____/_____/_/ |_/_____/\\____/   {DIM}v{VERSION}{RESET}")
     print()
-    print(f"{AMBER}Device : {_trunc(device_name, 71)}{RESET}")
-    print(f"{AMBER}Folder : {_trunc(str(outdir), 71)}{RESET}")
-    print(f"Status : {status_label}    {AMBER}Length : {human_duration(elapsed)}{RESET}    {AMBER}Ch: {channels}{RESET}")
+
+    # ── Box 1 · Device & Status ─────────────────────────────────────────────
+    print(_box_top(W))
+    print(_box_row(f"{AMBER}Device : {RESET}{_trunc(device_name, 67)}", W))
+    print(_box_row(f"{AMBER}Folder : {RESET}{_trunc(str(outdir), 67)}", W))
+    print(_box_row(
+        f"Status : {status_label}    {AMBER}Length : {human_duration(elapsed)}{RESET}"
+        f"    {AMBER}Ch: {channels}{RESET}", W))
     if clip_active:
-        print(f"{RED}{BOLD}WARNING: CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}")
-    if start_wall and mode == "recording":
-        print(f"{AMBER}Start  : {start_wall:%Y-%m-%d %H:%M:%S}{RESET}")
+        print(_box_row(
+            f"{RED}{BOLD}⚠ CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}", W))
+    if start_wall and mode in ("recording", "playlist"):
+        print(_box_row(f"{AMBER}Start  : {start_wall:%Y-%m-%d %H:%M:%S}{RESET}", W))
     elif mode == "preview" and preview_end is not None:
         preview_rms = max(prev_l, prev_r)
         remaining = max(0, int(round(preview_end - time.monotonic())))
-        print(f"{AMBER}Preview: {remaining}s left  ·  {classify_level(preview_rms)}{RESET}")
+        print(_box_row(
+            f"{AMBER}Preview: {remaining}s left  ·  {classify_level(preview_rms)}{RESET}", W))
     else:
-        print(f"{AMBER}Preview: completed / Pause{RESET}")
+        print(_box_row(f"{AMBER}Preview: completed / Pause{RESET}", W))
+    print(_box_bot(W))
     print()
-    print(f"{AMBER}L:{RESET} [{colored_meter(db_l, hold_l)}] {GREEN}{db_l:6.1f} dBFS{RESET}   peak={peak_l:.3f}")
-    print(f"{AMBER}R:{RESET} [{colored_meter(db_r, hold_r)}] {GREEN}{db_r:6.1f} dBFS{RESET}   peak={peak_r:.3f}")
-    print(f"{DIM}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS   Pending Save Jobs: {pending_conversions}{RESET}")
+
+    # ── Box 2 · Level Meter ─────────────────────────────────────────────────
+    print(_box_top(W))
+    print(_box_row(
+        f"{AMBER}L:{RESET} [{colored_meter(db_l, hold_l)}] {GREEN}{db_l:6.1f} dBFS{RESET}"
+        f"   peak={peak_l:.3f}", W))
+    print(_box_row(
+        f"{AMBER}R:{RESET} [{colored_meter(db_r, hold_r)}] {GREEN}{db_r:6.1f} dBFS{RESET}"
+        f"   peak={peak_r:.3f}", W))
+    print(_box_row(
+        f"{DIM}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS"
+        f"   Pending: {pending_conversions}{RESET}", W))
+    print(_box_bot(W))
     print()
+
+    # ── Box 3 · Song Info ───────────────────────────────────────────────────
     countdown = max(0, int(song_next_at - time.monotonic()))
     shazam_ok_txt = "  Shazam ok" if song_tagid else ""
-    print(f"{AMBER}{BOLD}Song:{RESET} {GREEN}{BOLD}{_trunc(song_artist + ' - ' + song_title, 74)}{RESET}")
     meta_parts = [p for p in [song_genre, song_year, song_album] if p]
     meta_txt = "  ·  ".join(meta_parts)
-    print(f"{AMBER}Info :{RESET} {GREEN}{BOLD}{_trunc(meta_txt, 72) if meta_txt else '-'}{RESET}")
-    print(f"{DIM}Check: {song_last_check}  Match: {song_last_match}  Next: {countdown:2d}s{shazam_ok_txt}{RESET}")
-    print(f"{DIM}List : {_trunc(str(outdir / song_fname), 73)}{RESET}")
+    print(_box_top(W))
+    print(_box_row(
+        f"{AMBER}Song : {RESET}{GREEN}{BOLD}{_trunc(song_artist + ' - ' + song_title, 69)}{RESET}", W))
+    print(_box_row(
+        f"{AMBER}Info : {RESET}{GREEN}{BOLD}{_trunc(meta_txt, 69) if meta_txt else '-'}{RESET}", W))
+    print(_box_row(
+        f"{DIM}Check: {song_last_check}  Match: {song_last_match}"
+        f"  Next: {countdown:2d}s{shazam_ok_txt}{RESET}", W))
+    print(_box_row(f"{DIM}List : {_trunc(str(outdir / song_fname), 69)}{RESET}", W))
+    print(_box_bot(W))
     print()
-    print(f"{AMBER}Keys   :{RESET} {BOLD}S{RESET}=STOP  {BOLD}R{RESET}=RESTART  {BOLD}Q{RESET}=Save and quit")
-    print(f"{DIM}Help   : run with --help or --help-messages for usage details{RESET}")
+
+    # ── Key bar ─────────────────────────────────────────────────────────────
+    def _key_btn(k: str) -> str:
+        return f"{BG_WHITE}{FG_BLACK}{BOLD} {k} {RESET}{BG_AMBER}{FG_BLACK}"
+
+    bar = (
+        f"  {_key_btn('S')}=STOP    "
+        f"{_key_btn('R')}=RESTART    "
+        f"{_key_btn('Q')}=SAVE & QUIT    "
+        f"{_key_btn('P')}=PLAYLIST ONLY  "
+    )
+    pad = " " * max(0, W - _visible_len(bar))
+    print(f"{BG_AMBER}{FG_BLACK}{bar}{pad}{RESET}")
 
 
 def main():
@@ -856,7 +952,7 @@ def main():
                     print(f"\n{AMBER}Preview finished: {msg}{RESET}")
                     time.sleep(0.5)
                     state.start_segment()
-                if state.mode == "recording" and state.elapsed_segment_seconds() >= SEGMENT_SECONDS:
+                if state.mode in ("recording", "playlist") and state.elapsed_segment_seconds() >= SEGMENT_SECONDS:
                     saved = state.stop_and_save()
                     if saved:
                         print(f"\n{AMBER}Segment saved (conversion in background): {saved.name}{RESET}")
@@ -867,7 +963,7 @@ def main():
                     and state.session_start_monotonic is not None
                     and time.monotonic() - state.session_start_monotonic >= state.max_record_seconds
                 ):
-                    if state.mode == "recording":
+                    if state.mode in ("recording", "playlist"):
                         saved = state.stop_and_save()
                         if saved:
                             print(f"\n{AMBER}Recording limit reached – saving: {saved.name}{RESET}")
@@ -878,20 +974,29 @@ def main():
                     state.start_segment()
                 key = keys.get_key()
                 if key == "s":
-                    if state.mode == "recording":
+                    if state.mode in ("recording", "playlist"):
                         saved = state.stop_and_save()
                         if saved:
                             print(f"\n{AMBER}Segment saved (conversion in background): {saved.name}{RESET}")
                             time.sleep(0.5)
                 elif key == "r":
-                    if state.mode == "recording":
+                    if state.mode in ("recording", "playlist"):
                         saved = state.stop_and_save()
                         if saved:
                             print(f"\n{AMBER}Segment saved (conversion in background): {saved.name}{RESET}")
                     state.start_segment()
                     time.sleep(0.2)
+                elif key == "p":
+                    if state.mode in ("recording", "playlist"):
+                        saved = state.stop_and_save()
+                        if saved:
+                            print(f"\n{AMBER}Segment saved: {saved.name}{RESET}")
+                    with state.lock:
+                        state.playlist_only = not state.playlist_only
+                    state.start_segment()
+                    time.sleep(0.2)
                 elif key == "q":
-                    if state.mode == "recording":
+                    if state.mode in ("recording", "playlist"):
                         saved = state.stop_and_save()
                         if saved:
                             print(f"\n{AMBER}Saving segment: {saved.name}{RESET}")
@@ -901,7 +1006,7 @@ def main():
                 time.sleep(UI_REFRESH_SECONDS)
     except KeyboardInterrupt:
         print("\nAborted by user.")
-        if state.mode == "recording":
+        if state.mode in ("recording", "playlist"):
             saved = state.stop_and_save()
             if saved:
                 print(f"Segment saved: {saved.name}")
