@@ -37,10 +37,8 @@ except Exception:
 
 try:
     import psutil as _psutil
-    _PSUTIL_AVAILABLE = True
 except ImportError:
     _psutil = None  # type: ignore
-    _PSUTIL_AVAILABLE = False
 
 VERSION = "0.1"
 
@@ -1249,20 +1247,20 @@ def main():
     )
     # Prevent display & idle sleep for the duration of the recording.
     _caffeinate = None
-    if shutil.which("caffeinate"):
-        _caffeinate = subprocess.Popen(["caffeinate", "-d", "-i"])
-
-    state.start_writer()
-    state.start_converter()
-    state.start_stream()
-    _set_input_gain(AUTO_GAIN_TARGET)
-    state.gain_current_pct = AUTO_GAIN_TARGET
-    with state.lock:
-        state.gain_history.append((time.monotonic(), AUTO_GAIN_TARGET))
-    state.start_songrec()
-    preview_end = time.monotonic() + PREVIEW_SECONDS
-
     try:
+        if shutil.which("caffeinate"):
+            _caffeinate = subprocess.Popen(["caffeinate", "-d", "-i"])
+
+        state.start_writer()
+        state.start_converter()
+        state.start_stream()
+        _set_input_gain(AUTO_GAIN_TARGET)
+        state.gain_current_pct = AUTO_GAIN_TARGET
+        with state.lock:
+            state.gain_history.append((time.monotonic(), AUTO_GAIN_TARGET))
+        state.start_songrec()
+        preview_end = time.monotonic() + PREVIEW_SECONDS
+
         with KeyReader() as keys:
             while True:
                 render_ui(state, device_name, preview_end if state.mode == "preview" else None)
