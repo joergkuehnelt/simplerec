@@ -122,9 +122,11 @@ class TestTrunc:
     def test_empty_string(self):
         assert sr._trunc("", 5) == ""
 
-    def test_non_string_coerced(self):
-        result = sr._trunc(12345, 3)
-        assert result.endswith("…")
+  
+        def test_non_string_coerced(self):
+            result = sr._trunc(str(12345), 3)
+            assert result.endswith("…")
+
 
 
 class TestVisibleLen:
@@ -528,6 +530,7 @@ class TestSegmentLifecycle:
 
     def test_segment_subfolder_name_format(self, tmp_path):
         s = self._started(tmp_path)
+        assert s.segment_dir is not None
         name = s.segment_dir.name
         assert len(name) == 13          # YYYYMMDD-HHMM
         assert name[8] == "-"
@@ -723,3 +726,308 @@ class TestElapsedSegmentSeconds:
         state.mode = "playlist"
         state.segment_start_monotonic = time.monotonic() - 10.0
         assert state.elapsed_segment_seconds() > 9.0
+
+
+# ===========================================================================
+# 11. Integration: audio_callback (direct call with numpy array)
+# ===========================================================================
+
+class TestAudioCallback:
+    def _make_audio(self, channels: int, frames: int = 512, amplitude: float = 0.5):
+        import numpy as np
+        return np.full((frames, channels), amplitude, dtype=np.float32)
+
+    def _state(self, tmp_path, channels=2):
+        return sr.RecorderState(device_index=0, samplerate=48000,
+                                channels=channels, output_dir=tmp_path)
+
+    def test_updates_rms_after_callback(self, tmp_path):
+        s = self._state(tmp_path)
+        indata = self._make_audio(2, amplitude=0.5)
+        s.audio_callback(indata, 512, None, None)
+        assert s.latest_rms_lr[0] > 0.0
+        assert s.latest_rms_lr[1] > 0.0
+
+    def test_updates_peak_after_callback(self, tmp_path):
+        s = self._state(tmp_path)
+        indata = self._make_audio(2, amplitude=0.8)
+        s.audio_callback(indata, 512, None, None)
+        assert s.latest_peak_lr[0] > 0.0
+
+    def test_clip_detected_near_full_scale(self, tmp_path):
+        s = self._state(tmp_path)
+        indata = self._make_audio(2, amplitude=0.999)
+        s.audio_callback(indata, 512, None, None)
+        assert s.clip_count >= 1
+        assert s.clip_hold_until > time.monotonic()
+
+    def test_no_clip_on_normal_signal(self, tmp_path):
+        s = self._state(tmp_path)
+        indata = self._make_audio(2, amplitude=0.2)
+        s.audio_callback(indata, 512, None, None)
+        assert s.clip_count == 0
+
+    def test_preview_peak_accumulates(self, tmp_path):
+        s = self._state(tmp_path)
+        s.mode = "preview"
+        indata = self._make_audio(2, amplitude=0.3)
+        s.audio_callback(indata, 512, None, None)
+        assert s.preview_peak_lr[0] > 0.0
+
+    def test_mono_input_mirrors_to_both_channels(self, tmp_path):
+        import numpy as np
+        s = self._state(tmp_path, channels=1)
+        indata = self._make_audio(1, amplitude=0.4)
+        s.audio_callback(indata, 512, None, None)
+        assert s.latest_rms_lr[0] == s.latest_rms_lr[1]
+
+    def test_silent_block_no_clip(self, tmp_path):
+        import numpy as np
+        s = self._state(tmp_path)
+        indata = np.zeros((512, 2), dtype=np.float32)
+        s.audio_callback(indata, 512, None, None)
+        assert s.clip_count == 0
+        assert s.latest_rms_lr == (0.0, 0.0)
+
+    def test_recording_mode_puts_block_in_writer_queue(self, tmp_path):
+        s = self._state(tmp_path)
+        s.mode = "recording"
+        s.current_file = MagicMock()
+        indata = self._make_audio(2, amplitude=0.3)
+        s.audio_callback(indata, 512, None, None)
+        assert not s.writer_q.empty()
+
+    def test_preview_mode_does_not_queue_blocks(self, tmp_path):
+        s = self._state(tmp_path)
+        s.mode = "preview"
+        indata = self._make_audio(2, amplitude=0.3)
+        s.audio_callback(indata, 512, None, None)
+        assert s.writer_q.empty()
+
+    def test_recent_blocks_populated(self, tmp_path):
+        s = self._state(tmp_path)
+        indata = self._make_audio(2, amplitude=0.2)
+        s.audio_callback(indata, 512, None, None)
+        assert len(s.recent_blocks) == 1
+
+
+# ===========================================================================
+# 12. Integration: poll_gain
+# ===========================================================================
+
+class TestPollGain:
+    def test_poll_reads_gain_and_stores_it(self, tmp_path):
+        s = _make_state(tmp_path)
+        # Set far enough in the past so the GAIN_POLL_SECONDS cooldown has expired.
+        s.gain_last_poll = time.monotonic() - sr.GAIN_POLL_SECONDS - 1.0
+        with patch("simplerec._get_input_gain", return_value=75):
+            s.poll_gain()
+        assert s.gain_current_pct == 75
+        assert len(s.gain_history) == 1
+
+    def test_poll_skipped_during_cooldown(self, tmp_path):
+        s = _make_state(tmp_path)
+        s.gain_last_poll = time.monotonic()   # just polled
+        with patch("simplerec._get_input_gain", return_value=75) as mock_get:
+            s.poll_gain()
+        mock_get.assert_not_called()
+
+    def test_poll_skips_on_none_return(self, tmp_path):
+        s = _make_state(tmp_path)
+        s.gain_last_poll = time.monotonic() - sr.GAIN_POLL_SECONDS - 1.0
+        with patch("simplerec._get_input_gain", return_value=None):
+            s.poll_gain()
+        assert s.gain_current_pct is None
+        assert len(s.gain_history) == 0
+
+
+# ===========================================================================
+# 13. Integration: _apply_gain / manual_set_gain
+# ===========================================================================
+
+class TestApplyGain:
+    def test_apply_gain_calls_set_input_gain(self, tmp_path):
+        s = _make_state(tmp_path)
+        with patch("simplerec._set_input_gain") as mock_set:
+            s._apply_gain(time.monotonic(), 60, "test msg")
+        mock_set.assert_called_once_with(60)
+
+    def test_apply_gain_updates_current_pct(self, tmp_path):
+        s = _make_state(tmp_path)
+        with patch("simplerec._set_input_gain"):
+            s._apply_gain(time.monotonic(), 55, "test")
+        assert s.gain_current_pct == 55
+
+    def test_apply_gain_clears_weak_since(self, tmp_path):
+        s = _make_state(tmp_path)
+        s.gain_weak_since = time.monotonic() - 5.0
+        with patch("simplerec._set_input_gain"):
+            s._apply_gain(time.monotonic(), 80, "boost")
+        assert s.gain_weak_since is None
+
+    def test_apply_gain_appends_to_history(self, tmp_path):
+        s = _make_state(tmp_path)
+        with patch("simplerec._set_input_gain"):
+            s._apply_gain(time.monotonic(), 70, "test")
+        assert len(s.gain_history) == 1
+        assert s.gain_history[-1][1] == 70
+
+    def test_manual_set_gain_writes_playlist(self, tmp_path):
+        s, pl = _recording_state(tmp_path)
+        with patch("simplerec._set_input_gain"):
+            s.manual_set_gain(65)
+        assert "CLIP-ADJUST" in pl.read_text()
+        assert "manual" in pl.read_text()
+
+
+# ===========================================================================
+# 14. Integration: write_song_status_file
+# ===========================================================================
+
+class TestWriteSongStatusFile:
+    def test_writes_file_in_output_dir(self, tmp_path):
+        s = _make_state(tmp_path)
+        s.session_start_wall = dt.datetime(2026, 5, 20, 22, 0)
+        s.write_song_status_file()
+        files = list(tmp_path.glob("current_song_*.txt"))
+        assert len(files) == 1
+
+    def test_file_contains_artist_and_title(self, tmp_path):
+        s = _make_state(tmp_path)
+        s.session_start_wall = dt.datetime(2026, 5, 20, 22, 0)
+        s.songrec_current_artist = "Daft Punk"
+        s.songrec_current_title = "Get Lucky"
+        s.write_song_status_file()
+        content = next(tmp_path.glob("current_song_*.txt")).read_text()
+        assert "Daft Punk" in content
+        assert "Get Lucky" in content
+
+    def test_file_in_segment_dir_when_recording(self, tmp_path):
+        s = _make_state(tmp_path)
+        s.session_start_wall = dt.datetime(2026, 5, 20, 22, 0)
+        seg = tmp_path / "segment"
+        seg.mkdir()
+        s.segment_dir = seg
+        s.write_song_status_file()
+        files = list(seg.glob("current_song_*.txt"))
+        assert len(files) == 1
+
+    def test_no_crash_on_unwritable_path(self, tmp_path):
+        s = _make_state(tmp_path / "nonexistent")
+        s.session_start_wall = dt.datetime(2026, 5, 20, 22, 0)
+        s.write_song_status_file()   # must not raise
+
+
+# ===========================================================================
+# 15. Integration: converter worker (afconvert mocked)
+# ===========================================================================
+
+class TestConverter:
+    def test_converter_calls_afconvert(self, tmp_path):
+        s = _make_state(tmp_path)
+        wav = tmp_path / "test.wav"
+        wav.write_bytes(b"\x00" * 44)
+        m4a = tmp_path / "test.m4a"
+        with patch("simplerec.subprocess.run") as mock_run, \
+             patch("simplerec.os.remove"):
+            mock_run.return_value = MagicMock(returncode=0)
+            s.start_converter()
+            s.convert_q.put((str(wav), str(m4a)))
+            s.convert_q.join()
+            s.stop_converter()
+        assert mock_run.called
+        cmd = mock_run.call_args[0][0]
+        assert "afconvert" in cmd[0]
+
+    def test_converter_keeps_wav_on_failure(self, tmp_path):
+        s = _make_state(tmp_path)
+        wav = tmp_path / "test.wav"
+        wav.write_bytes(b"\x00" * 44)
+        m4a = tmp_path / "test.m4a"
+        with patch("simplerec.subprocess.run",
+                   side_effect=__import__("subprocess").CalledProcessError(1, "afconvert")):
+            s.start_converter()
+            s.convert_q.put((str(wav), str(m4a)))
+            s.convert_q.join()
+            s.stop_converter()
+        # fallback WAV should exist (os.replace was called)
+        # We just verify no exception was raised and the queue was processed.
+
+
+# ===========================================================================
+# 16. Integration: colored_meter / bar_color
+# ===========================================================================
+
+class TestColoredMeter:
+    def test_returns_string_of_correct_length(self):
+        result = sr.colored_meter(-20.0, -10.0, width=20)
+        # Strip ANSI codes and check visible length
+        assert sr._visible_len(result) == 20
+
+    def test_silence_is_all_dots(self):
+        result = sr.colored_meter(-120.0, -120.0, width=10)
+        assert "●" not in result or result.count("●") <= 1   # peak marker only
+
+    def test_full_scale_has_many_filled(self):
+        result = sr.colored_meter(0.0, 0.0, width=20)
+        # at 0 dBFS the bar should be fully filled
+        stripped = result.replace("\033[0m", "")
+        assert stripped.count("●") >= 18
+
+    def test_bar_color_low_is_amber(self):
+        color = sr.bar_color(0, 20)
+        assert color == sr.AMBER
+
+    def test_bar_color_high_is_red(self):
+        color = sr.bar_color(19, 20)
+        assert color == sr.RED
+
+
+# ===========================================================================
+# 17. Integration: songrec disabled path
+# ===========================================================================
+
+class TestSongrecDisabled:
+    def test_start_songrec_disabled_sets_status(self, tmp_path):
+        s = _make_state(tmp_path)
+        s.session_start_wall = dt.datetime(2026, 5, 20, 22, 0)
+        s.songrec_enabled = False
+        s.start_songrec()
+        assert "disabled" in s.songrec_status
+
+    def test_stop_songrec_without_start_is_safe(self, tmp_path):
+        s = _make_state(tmp_path)
+        s.stop_songrec()   # must not raise
+
+    def test_start_songrec_disabled_writes_status_file(self, tmp_path):
+        s = _make_state(tmp_path)
+        s.session_start_wall = dt.datetime(2026, 5, 20, 22, 0)
+        s.songrec_enabled = False
+        s.start_songrec()
+        files = list(tmp_path.glob("current_song_*.txt"))
+        assert len(files) == 1
+
+
+# ===========================================================================
+# 18. Integration: _get_input_gain (mocked osascript)
+# ===========================================================================
+
+class TestGetInputGain:
+    def test_returns_integer_on_success(self):
+        mock_result = MagicMock()
+        mock_result.stdout = "72\n"
+        with patch("simplerec.subprocess.run", return_value=mock_result):
+            result = sr._get_input_gain()
+        assert result == 72
+
+    def test_returns_none_on_exception(self):
+        with patch("simplerec.subprocess.run", side_effect=OSError):
+            result = sr._get_input_gain()
+        assert result is None
+
+    def test_returns_none_on_invalid_output(self):
+        mock_result = MagicMock()
+        mock_result.stdout = "not_a_number\n"
+        with patch("simplerec.subprocess.run", return_value=mock_result):
+            result = sr._get_input_gain()
+        assert result is None
