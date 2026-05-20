@@ -771,10 +771,11 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     else:
         status_label = f"{AMBER}{BOLD}‖ PAUSE{RESET}"
     clear_screen()
-    print(f"{AMBER}{BOLD} ___  _  __  __ ___  _     ___  ___  ___  {RESET}")
-    print(f"{AMBER}{BOLD}/ __|| ||  \\/  | _ \\| |   | __||  _\\| __| {RESET}")
-    print(f"{AMBER}{BOLD}\\__ \\| || |\\/| |  _/| |__ | _| | /  / _|  {RESET}")
-    print(f"{AMBER}{BOLD}|___/|_||_|  |_|_|  |____||___||_|  \\___|  {DIM}v{VERSION}{RESET}")
+    print(f"{AMBER}{BOLD}   _____ ______  _______  __    __________  ____________{RESET}")
+    print(f"{AMBER}{BOLD}  / ___//  _/  |/  / __ \\/ /   / ____/ __ \\/ ____/ ____/{RESET}")
+    print(f"{AMBER}{BOLD}  \\__ \\ / // /|_/ / /_/ / /   / __/ / /_/ / __/ / /     {RESET}")
+    print(f"{AMBER}{BOLD} ___/ // // /  / / ____/ /___/ /___/ _, _/ /___/ /___   {RESET}")
+    print(f"{AMBER}{BOLD}/____/___/_/  /_/_/   /_____/_____/_/ |_/_____/\\____/   {DIM}v{VERSION}{RESET}")
     print()
     print(f"{AMBER}Device : {_trunc(device_name, 71)}{RESET}")
     print(f"{AMBER}Folder : {_trunc(str(outdir), 71)}{RESET}")
