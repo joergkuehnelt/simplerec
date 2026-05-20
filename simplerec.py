@@ -858,7 +858,10 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(f"{AMBER}{BOLD}██      ██ ████  ████ ██   ██ ██      ██      ██   ██ ██      ██      {RESET}")
     print(f"{AMBER}{BOLD}███████ ██ ██ ████ ██ ██████  ██      █████   ██████  █████   ██      {RESET}")
     print(f"{AMBER}{BOLD}     ██ ██ ██  ██  ██ ██      ██      ██      ██   ██ ██      ██      {RESET}")
-    print(f"{AMBER}{BOLD}███████ ██ ██      ██ ██      ███████ ███████ ██   ██ ███████  ██████ {DIM} v{VERSION}{RESET}")
+    _last = "███████ ██ ██      ██ ██      ███████ ███████ ██   ██ ███████  ██████ "
+    _ver  = f"v{VERSION}"
+    _pad  = " " * max(0, W - len(_last) - len(_ver))
+    print(f"{AMBER}{BOLD}{_last}{_pad}{DIM}{_ver}{RESET}")
     print()
 
     # ── Box 1 · Device & Status ─────────────────────────────────────────────
