@@ -429,6 +429,7 @@ class RecorderState:
     playlist_only: bool = False
     session_start_monotonic: Optional[float] = None
     session_start_wall: Optional[dt.datetime] = None
+    segment_dir: Optional[Path] = None
 
     def __post_init__(self):
         blocks = int(math.ceil((SONGREC_WINDOW_SECONDS * self.samplerate) / BLOCKSIZE)) + 2
@@ -455,7 +456,8 @@ class RecorderState:
                 f"Checks       : {self.songrec_total_checks}\n"
             )
         try:
-            (self.output_dir / fname).write_text(content, encoding="utf-8")
+            base_dir = self.segment_dir if self.segment_dir else self.output_dir
+            (base_dir / fname).write_text(content, encoding="utf-8")
         except OSError:
             pass
 
@@ -659,7 +661,8 @@ class RecorderState:
                         prefix  = self.filename_prefix or ""
                     if out_dir is not None:
                         ts   = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-                        dest = out_dir / f"{prefix}photo_{ts}.jpg"
+                        save_dir = self.segment_dir if self.segment_dir else out_dir
+                        dest = save_dir / f"{prefix}photo_{ts}.jpg"
                         try:
                             subprocess.run(
                                 ["imagesnap", "-w", "1", str(dest)],
@@ -897,14 +900,18 @@ class RecorderState:
                 self.session_start_wall = start_wall
             self.segment_start_wall = start_wall
             self.segment_start_monotonic = time.monotonic()
-            self.playlist_path = self.output_dir / f"{self.filename_prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.playlist.txt"
+            seg_dir = self.output_dir / f"{start_wall:%Y%m%d-%H%M}"
+            self.segment_dir = seg_dir
+            self.playlist_path = seg_dir / f"{self.filename_prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.playlist.txt"
             self.playlist_last_tagid = ""
             self.playlist_last_key = ("", "")
             self.playlist_last_was_empty = False
+        seg_dir.mkdir(parents=True, exist_ok=True)
+        with self.lock:
             if self.playlist_only:
                 self.mode = "playlist"
                 return
-            tmp_name = temp_wav_name(self.output_dir, start_wall)
+            tmp_name = temp_wav_name(seg_dir, start_wall)
             self.current_temp_name = tmp_name
         try:
             new_file = sf.SoundFile(str(tmp_name), mode="w", samplerate=self.samplerate, channels=self.channels, subtype="PCM_16")
@@ -914,6 +921,7 @@ class RecorderState:
                 self.segment_start_wall = None
                 self.segment_start_monotonic = None
                 self.playlist_path = None
+                self.segment_dir = None
             raise
         with self.lock:
             self.current_file = new_file
@@ -924,7 +932,8 @@ class RecorderState:
         try:
             with self.lock:
                 fname = self._song_status_fname()
-            f = self.output_dir / fname
+                base_dir = self.segment_dir or self.output_dir
+            f = base_dir / fname
             if f.exists():
                 f.unlink()
         except OSError:
@@ -956,7 +965,9 @@ class RecorderState:
             if (playlist_temp_pb is not None and start_wall_pb is not None
                     and playlist_temp_pb.exists()):
                 prefix = self.filename_prefix
-                playlist_final = self.output_dir / (
+                with self.lock:
+                    seg_dir = self.segment_dir or self.output_dir
+                playlist_final = seg_dir / (
                     f"{prefix}{start_wall_pb:%Y%m%d}"
                     f"-start{start_wall_pb:%H%M}-end{end_wall_pb:%H%M}.txt"
                 )
@@ -964,6 +975,8 @@ class RecorderState:
                     playlist_temp_pb.rename(playlist_final)
                 except OSError:
                     pass
+            with self.lock:
+                self.segment_dir = None
             self._remove_song_status_file()
             return None
         self.writer_q.join()
@@ -982,8 +995,11 @@ class RecorderState:
             self.segment_start_wall = None
         if tmp_name is None or start_wall is None:
             return None
+        with self.lock:
+            seg_dir = self.segment_dir or self.output_dir
+            self.segment_dir = None
         prefix = self.filename_prefix
-        final_name = self.output_dir / f"{prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M}-end{end_wall:%H%M}.m4a"
+        final_name = seg_dir / f"{prefix}{start_wall:%Y%m%d}-start{start_wall:%H%M}-end{end_wall:%H%M}.m4a"
         if final_name.exists():
             final_name = final_name.with_name(final_name.stem + dt.datetime.now().strftime("-%H%M%S") + final_name.suffix)
         with self.lock:
@@ -1135,6 +1151,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         gain_current = state.gain_current_pct
         auto_gain_on = state.auto_gain_enabled
         outdir = state.output_dir
+        seg_dir = state.segment_dir
         channels = state.channels
         song_title = state.songrec_current_title
         song_artist = state.songrec_current_artist
@@ -1186,7 +1203,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     # ── Box 1 · Device & Status ─────────────────────────────────────────────
     print(_box_top(W))
     print(_box_row(f"{AMBER}Device : {_trunc(device_name, 56)}  {ch_label}{RESET}", W))
-    print(_box_row(f"{AMBER}Folder : {_trunc(str(outdir), 67)}{RESET}", W))
+    folder_display = seg_dir if seg_dir is not None else outdir
+    print(_box_row(f"{AMBER}Folder : {_trunc(str(folder_display), 67)}{RESET}", W))
     print(_box_row(
         f"{AMBER}Status : {status_label}{AMBER}    Length : {BLUE}{BOLD}{human_duration(elapsed)}{RESET}{AMBER}{remaining_txt}{RESET}", W))
     print(_box_row(
@@ -1465,7 +1483,8 @@ def main():
         state.stop_converter()
         # remove the live-status txt file — only the playlist is kept
         try:
-            status_file = state.output_dir / state._song_status_fname()
+            base_dir = state.segment_dir if state.segment_dir else state.output_dir
+            status_file = base_dir / state._song_status_fname()
             if status_file.exists():
                 status_file.unlink()
         except OSError:
