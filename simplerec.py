@@ -64,6 +64,10 @@ METER_WIDTH = 38
 PEAK_HOLD_SECONDS = 1.2
 CLIP_HOLD_SECONDS = 2.0
 CLIP_THRESHOLD = 0.995
+AUTO_GAIN_TARGET        = 80    # % to set when auto-adjusting macOS input gain
+AUTO_GAIN_COOLDOWN      = 6.0   # seconds between consecutive adjustments
+AUTO_GAIN_WEAK_DB       = -35.0 # dBFS – signal considered too weak below this
+AUTO_GAIN_WEAK_HOLD     = 4.0   # seconds of weak signal before raising gain
 SONGREC_WINDOW_SECONDS = 5
 SONGREC_INTERVAL_SECONDS = 15
 SONGREC_TEMP_SNIPPET = ".songrec_snippet.wav"
@@ -199,6 +203,29 @@ def colored_meter(dbfs: float, peak_hold_db: float, width: int = METER_WIDTH) ->
         else:
             out.append(GREY + "·")
     return "".join(out) + RESET
+
+
+def _set_input_gain(pct: int) -> None:
+    """Set macOS system microphone input gain via osascript (0–100)."""
+    try:
+        subprocess.run(
+            ["osascript", "-e", f"set volume input volume {pct}"],
+            check=False, capture_output=True, timeout=1.0
+        )
+    except Exception:
+        pass
+
+
+def _get_input_gain() -> Optional[int]:
+    """Read current macOS system microphone input gain (0–100), or None on error."""
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", "input volume of (get volume settings)"],
+            capture_output=True, text=True, timeout=1.0
+        )
+        return int(r.stdout.strip())
+    except Exception:
+        return None
 
 
 def require_macos_tools():
@@ -339,6 +366,9 @@ class RecorderState:
     peak_hold_until_lr: tuple[float, float] = (0.0, 0.0)
     clip_hold_until: float = 0.0
     clip_count: int = 0
+    gain_last_adjust: float = 0.0
+    gain_weak_since: Optional[float] = None
+    gain_last_action: str = ""  # for UI display
     stream: Optional[sd.InputStream] = None
     writer_q: queue.Queue = field(default_factory=queue.Queue)
     writer_stop: threading.Event = field(default_factory=threading.Event)
@@ -567,6 +597,37 @@ class RecorderState:
                 self.clip_count += 1
             if self.mode == "recording" and self.current_file is not None:
                 self.writer_q.put(indata.copy())
+
+    def check_auto_gain(self) -> None:
+        """Raise or lower macOS input gain to AUTO_GAIN_TARGET if level is bad."""
+        now = time.monotonic()
+        if now - self.gain_last_adjust < AUTO_GAIN_COOLDOWN:
+            return
+        with self.lock:
+            mode = self.mode
+            peak_l, peak_r = self.latest_peak_lr
+            clip_now = now < self.clip_hold_until
+        if mode not in ("recording", "playlist"):
+            return
+        peak_db = linear_to_dbfs(max(peak_l, peak_r))
+        if clip_now:
+            _set_input_gain(AUTO_GAIN_TARGET)
+            self.gain_last_adjust = now
+            self.gain_weak_since = None
+            with self.lock:
+                self.gain_last_action = f"↓ clipping → set to {AUTO_GAIN_TARGET}%"
+            return
+        if peak_db < AUTO_GAIN_WEAK_DB:
+            if self.gain_weak_since is None:
+                self.gain_weak_since = now
+            elif now - self.gain_weak_since >= AUTO_GAIN_WEAK_HOLD:
+                _set_input_gain(AUTO_GAIN_TARGET)
+                self.gain_last_adjust = now
+                self.gain_weak_since = None
+                with self.lock:
+                    self.gain_last_action = f"↑ too weak → set to {AUTO_GAIN_TARGET}%"
+        else:
+            self.gain_weak_since = None
 
     def start_stream(self):
         self.stream = sd.InputStream(device=self.device_index, channels=self.channels, samplerate=self.samplerate, dtype=DTYPE, blocksize=BLOCKSIZE, callback=self.audio_callback)
@@ -822,6 +883,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         pending_conversions = state.convert_q.qsize()
         clip_active = time.monotonic() < state.clip_hold_until
         clip_count = state.clip_count
+        gain_action = state.gain_last_action
         outdir = state.output_dir
         channels = state.channels
         song_title = state.songrec_current_title
@@ -879,6 +941,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     if clip_active:
         print(_box_row(
             f"{RED}{BOLD}⚠ CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}", W))
+    if gain_action:
+        print(_box_row(f"{AMBER}Auto-gain: {gain_action}{RESET}", W))
     if start_wall and mode in ("recording", "playlist"):
         print(_box_row(f"{AMBER}Start  : {start_wall:%Y-%m-%d %H:%M:%S}{RESET}", W))
     elif mode == "preview" and preview_end is not None:
@@ -1035,7 +1099,7 @@ def main():
                         state.mode = "quitting"
                     break
                 time.sleep(UI_REFRESH_SECONDS)
-    except KeyboardInterrupt:
+                state.check_auto_gain()
         print("\nAborted by user.")
         if state.mode in ("recording", "playlist"):
             saved = state.stop_and_save()
