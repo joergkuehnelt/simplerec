@@ -36,8 +36,10 @@ echo
 echo -e "  ${YELLOW}Your password may be asked once for Homebrew.${RESET}"
 echo
 echo -e "  ${YELLOW}If macOS shows 'could not be verified' / Gatekeeper warning:${RESET}"
-echo    "  → Right-click the file in Finder → Open → Open"
-echo    "  → Or run in Terminal: xattr -cr \"$(dirname \"$0\")\""
+echo    "  Option A (System Settings): double-click → OK → System Settings"
+echo    "            → Privacy & Security → scroll down → 'Open Anyway'"
+echo    "  Option B (right-click):     right-click file → Open → Open"
+echo    "  Option C (Terminal):        xattr -cr \"$(dirname \"$0\")\""
 echo
 read -r -p "  Press ENTER to start, or close this window to abort …"
 echo

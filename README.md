@@ -23,9 +23,21 @@ A macOS audio recorder that captures stereo sound in M4A format with integrated 
 ### Step 3 — Run the Installer
 
 > The installer sets up everything automatically: Homebrew, Python 3, ffmpeg, and all required packages.
-> **macOS Gatekeeper warning ("could not be verified")?**  
-> **Without Terminal:** Right-click (or Ctrl-click) the file in Finder → **Open** → **Open**  
-> **Alternative (Terminal):** `xattr -cr ~/Downloads/simplerec-main`
+> **macOS Gatekeeper warning ("could not be verified")?**
+>
+> **Option A — System Settings** (recommended, no Terminal needed):
+> 1. Double-click the file → click **OK** on the warning
+> 2. Open **System Settings → Privacy & Security**
+> 3. Scroll down → click **"Open Anyway"** next to the file name
+> 4. Confirm with your password
+>
+> **Option B — Right-click** (may work on older macOS):
+> Right-click (or Ctrl-click) the file in Finder → **Open** → **Open**
+>
+> **Option C — Terminal** (always works):
+> ```
+> xattr -cr ~/Downloads/simplerec-main
+> ```
 1. Open the `simplerec-main` folder in Finder
 2. Double-click **`Install simplerec.command`**
 3. macOS may show a security warning the first time:
