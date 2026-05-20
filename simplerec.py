@@ -835,6 +835,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         song_year  = state.songrec_current_year
         song_fname = state._song_status_fname()
         playlist_only = state.playlist_only
+        max_record_seconds = state.max_record_seconds
+        session_start_mono = state.session_start_monotonic
     elapsed = state.elapsed_segment_seconds() if mode in ("recording", "playlist") else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -844,6 +846,12 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         cpu_pct = _psutil.cpu_percent()
         ram_pct = _psutil.virtual_memory().percent
         sys_txt = f"    CPU:{cpu_pct:5.1f}%  RAM:{ram_pct:5.1f}%"
+    # remaining time countdown (red)
+    if max_record_seconds is not None and session_start_mono is not None:
+        secs_left = max(0.0, max_record_seconds - (time.monotonic() - session_start_mono))
+        remaining_txt = f"  {RED}{BOLD}{human_duration(secs_left)} left{RESET}{AMBER}"
+    else:
+        remaining_txt = ""
     if mode == "recording":
         status_label = f"{RED}{BOLD}● REC{RESET}"
     elif mode == "playlist":
@@ -858,10 +866,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(f"{AMBER}{BOLD}██      ██ ████  ████ ██   ██ ██      ██      ██   ██ ██      ██      {RESET}")
     print(f"{AMBER}{BOLD}███████ ██ ██ ████ ██ ██████  ██      █████   ██████  █████   ██      {RESET}")
     print(f"{AMBER}{BOLD}     ██ ██ ██  ██  ██ ██      ██      ██      ██   ██ ██      ██      {RESET}")
-    _last = "███████ ██ ██      ██ ██      ███████ ███████ ██   ██ ███████  ██████ "
-    _ver  = f"v{VERSION}"
-    _pad  = " " * max(0, W - len(_last) - len(_ver))
-    print(f"{AMBER}{BOLD}{_last}{_pad}{DIM}{_ver}{RESET}")
+    print(f"{AMBER}{BOLD}███████ ██ ██      ██ ██      ███████ ███████ ██   ██ ███████  ██████ {DIM} v{VERSION}{RESET}")
     print()
 
     # ── Box 1 · Device & Status ─────────────────────────────────────────────
@@ -869,7 +874,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(_box_row(f"{AMBER}Device : {_trunc(device_name, 56)}  {ch_label}{RESET}", W))
     print(_box_row(f"{AMBER}Folder : {_trunc(str(outdir), 67)}{RESET}", W))
     print(_box_row(
-        f"{AMBER}Status : {status_label}{AMBER}    Length : {BLUE}{BOLD}{human_duration(elapsed)}{RESET}{AMBER}"
+        f"{AMBER}Status : {status_label}{AMBER}    Length : {BLUE}{BOLD}{human_duration(elapsed)}{RESET}{AMBER}{remaining_txt}"
         f"    Ch: {channels}{sys_txt}{RESET}", W))
     if clip_active:
         print(_box_row(
@@ -921,10 +926,10 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         return f"{BG_WHITE}{FG_BLACK}{BOLD} {k} {RESET}{BG_AMBER}{FG_BLACK}"
 
     bar = (
-        f"  {_key_btn('S')}=STOP (pause)    "
-        f"{_key_btn('R')}=RESTART (new file)    "
-        f"{_key_btn('Q')}=SAVE & QUIT    "
-        f"{_key_btn('P')}=PLAYLIST ONLY  "
+        f"  {_key_btn('S')}=STOP (pause)  "
+        f"{_key_btn('R')}=RESTART (new file)  "
+        f"{_key_btn('Q')}=SAVE & QUIT  "
+        f"{_key_btn('P')}=PLAYLIST ONLY"
     )
     pad = " " * max(0, W - _visible_len(bar))
     print(f"{BG_AMBER}{FG_BLACK}{bar}{pad}{RESET}")
