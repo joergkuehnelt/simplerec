@@ -58,7 +58,6 @@ CLIP_HOLD_SECONDS = 2.0
 CLIP_THRESHOLD = 0.995
 SONGREC_WINDOW_SECONDS = 5
 SONGREC_INTERVAL_SECONDS = 15
-SONGREC_STATUS_FILE = "current_song.txt"
 SONGREC_TEMP_SNIPPET = ".songrec_snippet.wav"
 
 RESET = "\033[0m"
@@ -70,8 +69,6 @@ GREEN = "\033[38;5;46m"
 YELLOW = "\033[38;5;226m"
 RED = "\033[38;5;196m"
 GREY = "\033[38;5;240m"
-CYAN = "\033[38;5;45m"
-MAGENTA = "\033[38;5;201m"
 
 
 class KeyReader:
@@ -260,10 +257,6 @@ def choose_output_dir() -> Path:
     return outdir
 
 
-def m4a_final_name(output_dir: Path, start_wall: dt.datetime, end_wall: dt.datetime) -> Path:
-    return output_dir / f"{start_wall:%Y%m%d}-start{start_wall:%H%M}-end{end_wall:%H%M}.m4a"
-
-
 def temp_wav_name(output_dir: Path, start_wall: dt.datetime) -> Path:
     return output_dir / f".{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.part.wav"
 
@@ -292,7 +285,7 @@ def probe_input_level(device_index: int, samplerate: int, channels: int, seconds
             return left_db, right_db
     except Exception:
         return None, None
-    return None, None
+    return None, None  # values was empty
 
 
 @dataclass
@@ -325,7 +318,6 @@ class RecorderState:
     songrec_stop: threading.Event = field(default_factory=threading.Event)
     songrec_thread: Optional[threading.Thread] = None
     recent_blocks: deque = field(default_factory=deque)
-    recent_blocks_maxlen: int = 0
     songrec_last_check: Optional[dt.datetime] = None
     songrec_last_match: Optional[dt.datetime] = None
     songrec_current_title: str = "-"
@@ -352,8 +344,8 @@ class RecorderState:
         return (self.filename_prefix + base) if self.filename_prefix else base
 
     def write_song_status_file(self):
-        path = self.output_dir / self._song_status_fname()
         with self.lock:
+            fname = self._song_status_fname()  # reads session_start_wall – must be inside lock
             last_check = self.songrec_last_check.strftime("%Y-%m-%d %H:%M:%S") if self.songrec_last_check else "-"
             last_match = self.songrec_last_match.strftime("%Y-%m-%d %H:%M:%S") if self.songrec_last_match else "-"
             content = (
@@ -363,7 +355,10 @@ class RecorderState:
                 f"Status       : {self.songrec_status}\n"
                 f"Checks       : {self.songrec_total_checks}\n"
             )
-        path.write_text(content, encoding="utf-8")
+        try:
+            (self.output_dir / fname).write_text(content, encoding="utf-8")
+        except OSError:
+            pass
 
     def append_to_playlist(self, title, artist, tagid: str, check_time: dt.datetime, elapsed: float):
         """Append one entry (or blank line) to the segment playlist .txt file."""
@@ -464,7 +459,10 @@ class RecorderState:
                         self.songrec_last_check = dt.datetime.now()
                         self.songrec_total_checks += 1
                         self.songrec_status = f"Error: {type(exc).__name__}"
-                    self.write_song_status_file()
+                    try:
+                        self.write_song_status_file()
+                    except Exception:
+                        pass
                 finally:
                     try:
                         if snippet_path.exists():
@@ -568,6 +566,8 @@ class RecorderState:
                     try: os.replace(wav_path, fallback)
                     except OSError: pass
                     print(f"\nWarning: M4A conversion failed, keeping WAV: {fallback}")
+                except Exception as exc:
+                    print(f"\nWarning: Unexpected conversion error ({type(exc).__name__}): {exc}")
                 finally:
                     self.convert_q.task_done()
         self.convert_thread = threading.Thread(target=_converter, daemon=True)
@@ -580,6 +580,8 @@ class RecorderState:
             self.convert_thread = None
 
     def start_segment(self):
+        # Prepare state fields under the lock, but open the file outside it
+        # to avoid blocking the audio callback during disk I/O.
         with self.lock:
             if self.current_file is not None:
                 return
@@ -588,13 +590,23 @@ class RecorderState:
                 self.session_start_monotonic = time.monotonic()
                 self.session_start_wall = start_wall
             tmp_name = temp_wav_name(self.output_dir, start_wall)
-            self.current_file = sf.SoundFile(str(tmp_name), mode="w", samplerate=self.samplerate, channels=self.channels, subtype="PCM_16")
             self.current_temp_name = tmp_name
             self.segment_start_wall = start_wall
             self.segment_start_monotonic = time.monotonic()
             self.playlist_path = self.output_dir / f".{start_wall:%Y%m%d}-start{start_wall:%H%M%S}.playlist.txt"
             self.playlist_last_tagid = ""
             self.playlist_last_was_empty = False
+        try:
+            new_file = sf.SoundFile(str(tmp_name), mode="w", samplerate=self.samplerate, channels=self.channels, subtype="PCM_16")
+        except Exception:
+            with self.lock:  # roll back on file-open failure
+                self.current_temp_name = None
+                self.segment_start_wall = None
+                self.segment_start_monotonic = None
+                self.playlist_path = None
+            raise
+        with self.lock:
+            self.current_file = new_file
             self.mode = "recording"
 
     def stop_and_save(self) -> Optional[Path]:
@@ -707,13 +719,13 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         clip_count = state.clip_count
         outdir = state.output_dir
         channels = state.channels
-        song_status = state.songrec_status
         song_title = state.songrec_current_title
         song_artist = state.songrec_current_artist
         song_last_check = state.songrec_last_check.strftime("%H:%M:%S") if state.songrec_last_check else "-"
         song_last_match = state.songrec_last_match.strftime("%H:%M:%S") if state.songrec_last_match else "-"
         song_next_at = state.songrec_next_check_at
         song_tagid = state.songrec_last_tagid
+        song_fname = state._song_status_fname()
     elapsed = state.elapsed_segment_seconds() if mode == "recording" else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -749,8 +761,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     shazam_ok_txt = "  Shazam ok" if song_tagid else ""
     print(f"{AMBER}{BOLD}Song:{RESET} {GREEN}{BOLD}{_trunc(song_artist + ' - ' + song_title, 74)}{RESET}")
     print(f"{DIM}Check: {song_last_check}  Match: {song_last_match}  Next: {countdown:2d}s{shazam_ok_txt}{RESET}")
-    with state.lock:
-        song_fname = state._song_status_fname()
     print(f"{DIM}List : {_trunc(str(outdir / song_fname), 73)}{RESET}")
     print()
     print(f"{AMBER}Keys   :{RESET} {BOLD}S{RESET}=STOP  {BOLD}R{RESET}=RESTART  {BOLD}Q{RESET}=Save and quit")
