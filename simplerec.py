@@ -1095,6 +1095,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     clear_screen()
 
     # ── Logo ────────────────────────────────────────────────────────────────
+    print()
     print(f"{AMBER}{BOLD}███████ ██ ███    ███ ██████  ██      ███████ ██████  ███████  ██████ {RESET}")
     print(f"{AMBER}{BOLD}██      ██ ████  ████ ██   ██ ██      ██      ██   ██ ██      ██      {RESET}")
     print(f"{AMBER}{BOLD}███████ ██ ██ ████ ██ ██████  ██      █████   ██████  █████   ██      {RESET}")
