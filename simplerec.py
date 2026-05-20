@@ -184,17 +184,17 @@ def bar_color(index: int, width: int) -> str:
 
 
 def colored_meter(dbfs: float, peak_hold_db: float, width: int = METER_WIDTH) -> str:
-    db = max(-60.0, min(0.0, dbfs))
-    frac = (db + 60.0) / 60.0
+    db = max(-40.0, min(0.0, dbfs))
+    frac = (db + 40.0) / 40.0
     filled = int(round(frac * width))
-    peak_frac = (max(-60.0, min(0.0, peak_hold_db)) + 60.0) / 60.0
+    peak_frac = (max(-40.0, min(0.0, peak_hold_db)) + 40.0) / 40.0
     peak_pos = max(0, min(width - 1, int(round(peak_frac * (width - 1)))))
     out = []
     for i in range(width):
         if i == peak_pos:
             out.append(RED + "│")
         elif i < filled:
-            out.append(bar_color(i, width) + "█")
+            out.append(bar_color(i, width) + "●")
         else:
             out.append(GREY + "·")
     return "".join(out) + RESET
@@ -885,10 +885,10 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     # ── Box 2 · Level Meter ─────────────────────────────────────────────────
     print(_box_top(W))
     print(_box_row(
-        f"{AMBER}L:{RESET} [{colored_meter(db_l, hold_l)}] {AMBER}{db_l:6.1f} dBFS"
+        f"{AMBER}L: {AMBER}[{colored_meter(db_l, hold_l)}{AMBER}] {db_l:6.1f} dBFS"
         f"   peak={peak_l:.3f}{RESET}", W))
     print(_box_row(
-        f"{AMBER}R:{RESET} [{colored_meter(db_r, hold_r)}] {AMBER}{db_r:6.1f} dBFS"
+        f"{AMBER}R: {AMBER}[{colored_meter(db_r, hold_r)}{AMBER}] {db_r:6.1f} dBFS"
         f"   peak={peak_r:.3f}{RESET}", W))
     print(_box_row(
         f"{AMBER}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS"
