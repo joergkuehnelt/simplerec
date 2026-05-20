@@ -331,14 +331,19 @@ class RecorderState:
     filename_prefix: str = ""
     max_record_seconds: Optional[float] = None
     session_start_monotonic: Optional[float] = None
+    session_start_wall: Optional[dt.datetime] = None
 
     def __post_init__(self):
         blocks = int(math.ceil((SONGREC_WINDOW_SECONDS * self.samplerate) / BLOCKSIZE)) + 2
         self.recent_blocks = deque(maxlen=max(4, blocks))
 
+    def _song_status_fname(self) -> str:
+        ts = self.session_start_wall.strftime("%Y%m%d-%H%M") if self.session_start_wall else "session"
+        base = f"current_song_{ts}.txt"
+        return (self.filename_prefix + base) if self.filename_prefix else base
+
     def write_song_status_file(self):
-        fname = (self.filename_prefix + SONGREC_STATUS_FILE) if self.filename_prefix else SONGREC_STATUS_FILE
-        path = self.output_dir / fname
+        path = self.output_dir / self._song_status_fname()
         with self.lock:
             last_check = self.songrec_last_check.strftime("%Y-%m-%d %H:%M:%S") if self.songrec_last_check else "-"
             last_match = self.songrec_last_match.strftime("%Y-%m-%d %H:%M:%S") if self.songrec_last_match else "-"
@@ -528,6 +533,7 @@ class RecorderState:
             start_wall = dt.datetime.now()
             if self.session_start_monotonic is None:
                 self.session_start_monotonic = time.monotonic()
+                self.session_start_wall = start_wall
             tmp_name = temp_wav_name(self.output_dir, start_wall)
             self.current_file = sf.SoundFile(str(tmp_name), mode="w", samplerate=self.samplerate, channels=self.channels, subtype="PCM_16")
             self.current_temp_name = tmp_name
@@ -648,7 +654,9 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print()
     print(f"{AMBER}{BOLD}Song:{RESET} {song_artist} - {song_title}")
     print(f"{DIM}Last check: {song_last_check}   Last match: {song_last_match}   Status: {song_status}{RESET}")
-    print(f"{DIM}Status file: {outdir / SONGREC_STATUS_FILE}{RESET}")
+    with state.lock:
+        song_fname = state._song_status_fname()
+    print(f"{DIM}Status file: {outdir / song_fname}{RESET}")
     print()
     print(f"{AMBER}Keys   :{RESET} {BOLD}S{RESET}=STOP  {BOLD}R{RESET}=RESTART  {BOLD}Q{RESET}=Save and quit")
     print(f"{DIM}Help   : run with --help or --help-messages for usage details{RESET}")
@@ -707,7 +715,7 @@ def main():
                     if saved:
                         print(f"\n{AMBER}Segment saved (conversion in background): {saved.name}{RESET}")
                     state.start_segment()
-                # auto-stop when user-defined duration is reached
+                # auto-restart when user-defined duration is reached
                 if (
                     state.max_record_seconds is not None
                     and state.session_start_monotonic is not None
@@ -717,9 +725,11 @@ def main():
                         saved = state.stop_and_save()
                         if saved:
                             print(f"\n{AMBER}Recording limit reached – saving: {saved.name}{RESET}")
+                    # reset session counters so next segment starts a fresh session
                     with state.lock:
-                        state.mode = "quitting"
-                    break
+                        state.session_start_monotonic = None
+                        state.session_start_wall = None
+                    state.start_segment()
                 key = keys.get_key()
                 if key == "s":
                     if state.mode == "recording":
