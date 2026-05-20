@@ -935,8 +935,9 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(_box_row(f"{AMBER}Device : {_trunc(device_name, 56)}  {ch_label}{RESET}", W))
     print(_box_row(f"{AMBER}Folder : {_trunc(str(outdir), 67)}{RESET}", W))
     print(_box_row(
-        f"{AMBER}Status : {status_label}{AMBER}    Length : {BLUE}{BOLD}{human_duration(elapsed)}{RESET}{AMBER}{remaining_txt}"
-        f"    Ch: {channels}{sys_txt}{RESET}", W))
+        f"{AMBER}Status : {status_label}{AMBER}    Length : {BLUE}{BOLD}{human_duration(elapsed)}{RESET}{AMBER}{remaining_txt}{RESET}", W))
+    print(_box_row(
+        f"{AMBER}Ch: {channels}{sys_txt}{RESET}", W))
     if clip_active:
         print(_box_row(
             f"{RED}{BOLD}⚠ CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}", W))
