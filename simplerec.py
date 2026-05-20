@@ -68,7 +68,8 @@ GAIN_HISTORY_SECONDS    = 600   # 10 min window for gain history graph
 GAIN_HISTORY_MAX        = 256   # max samples kept in history deque
 SONGREC_WINDOW_SECONDS = 5
 SONGREC_INTERVAL_SECONDS = 15
-SONGREC_TEMP_SNIPPET = ".songrec_snippet.wav"
+# Unique per-process to avoid collisions when two instances share an output dir.
+SONGREC_TEMP_SNIPPET = f".songrec_snippet_{os.getpid()}.wav"
 PHOTO_FIRST_DELAY_SECONDS = 300  # 5 minutes before first webcam snapshot
 PHOTO_INTERVAL_SECONDS = 900    # 15 minutes between subsequent snapshots
 
@@ -209,9 +210,11 @@ def colored_meter(dbfs: float, peak_hold_db: float, width: int = METER_WIDTH) ->
 
 def _set_input_gain(pct: int) -> None:
     """Set macOS system microphone input gain via osascript (0–100)."""
+    # Clamp and force int to prevent injection if caller ever passes a non-int.
+    safe_pct = max(0, min(100, int(pct)))
     try:
         subprocess.run(
-            ["osascript", "-e", f"set volume input volume {pct}"],
+            ["osascript", "-e", f"set volume input volume {safe_pct}"],
             check=False, capture_output=True, timeout=1.0
         )
     except Exception:

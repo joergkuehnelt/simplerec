@@ -30,6 +30,9 @@ echo -e "${RESET}"
 
 # ── 1. Download ──────────────────────────────────────────────────────────────
 info "Downloading latest simplerec from GitHub …"
+# Note: the ZIP is downloaded over HTTPS from GitHub. No additional checksum
+# verification is performed. If you require supply-chain integrity, verify the
+# SHA-256 of the downloaded file against a known-good value before proceeding.
 if ! curl -fsSL "$REPO_URL" -o "$TMP_ZIP"; then
     error "Download failed. Please check your internet connection."
 fi
