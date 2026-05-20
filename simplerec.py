@@ -1352,7 +1352,7 @@ def main():
                     if updater.exists():
                         print(f"\nLaunching updater …")
                         import subprocess as _sp
-                        _sp.Popen(["bash", str(updater)])
+                        _sp.Popen(["open", str(updater)])
                     else:
                         print(f"\n{AMBER}Update simplerec.command not found — please download manually.{RESET}")
                     break
