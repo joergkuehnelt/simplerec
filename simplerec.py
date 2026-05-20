@@ -73,7 +73,7 @@ AUTO_GAIN_WEAK_DB       = -35.0 # dBFS – signal considered weak below this
 AUTO_GAIN_VERY_WEAK_DB  = -50.0 # dBFS – signal considered very weak below this
 AUTO_GAIN_DANGER_DB     = -2.0  # dBFS – peak above this = clipping danger
 AUTO_GAIN_WEAK_HOLD     = 4.0   # seconds of weak signal before raising gain
-AUTO_GAIN_MSG_TTL       = 10.0  # seconds before clearing status message
+AUTO_GAIN_MSG_TTL       = 20.0  # seconds the status message stays highlighted red
 GAIN_POLL_SECONDS       = 5.0   # how often to read current input gain
 GAIN_HISTORY_SECONDS    = 600   # 10 min window for gain history graph
 GAIN_HISTORY_MAX        = 256   # max samples kept in history deque
@@ -89,6 +89,7 @@ AMBER = "\033[38;5;214m"
 GREEN = "\033[38;5;46m"
 YELLOW = "\033[38;5;226m"
 RED = "\033[38;5;196m"
+RED_BRIGHT = "\033[38;5;203m"  # brighter / lighter red for 80% row
 GREY = "\033[38;5;240m"
 BLUE      = "\033[38;5;39m"
 BG_AMBER  = "\033[48;5;214m"   # amber background (for key bar)
@@ -962,6 +963,8 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
                 break
         values.append(latest)
     out: list[str] = []
+    # Row 0 = 100% (top), Row 1 = 80%, Row 2 = 60%, Row 3 = 40%, Row 4 = 20%
+    row_colors = [RED, RED_BRIGHT, YELLOW, YELLOW, GREEN]
     for r in range(rows):
         row_chars: list[str] = []
         for c in range(cols):
@@ -972,7 +975,7 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
                 bucket = min(rows - 1, max(0, int(v / (100.0 / rows))))
                 gain_row = rows - 1 - bucket  # row 0 = top = highest gain
                 if r == gain_row:
-                    row_chars.append(f"{RED}{BOLD}●{RESET}")
+                    row_chars.append(f"{row_colors[r]}{BOLD}●{RESET}")
                 else:
                     row_chars.append(f"{GREY}·{RESET}")
         out.append("".join(row_chars))
@@ -1068,15 +1071,23 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     # ── Box · Auto-gain history ─────────────────────────────────────────────
     cur_txt = f"  (now: {gain_current}%)" if gain_current is not None else ""
     mode_tag = f"{GREEN}[AUTO]{RESET}" if auto_gain_on else f"{YELLOW}[MANUAL]{RESET}"
-    if gain_action and (time.monotonic() - gain_action_at) <= AUTO_GAIN_MSG_TTL:
+    recent_adjust = (
+        gain_action != ""
+        and gain_action_at > 0.0
+        and (time.monotonic() - gain_action_at) <= AUTO_GAIN_MSG_TTL
+    )
+    if recent_adjust:
         action_txt = gain_action
+        msg_color = f"{RED}{BOLD}"
     else:
-        action_txt = "(idle)"
-    status_line = f"{RED}{BOLD}Auto-gain:{RESET} {mode_tag} {RED}{BOLD}{action_txt}{cur_txt}{RESET}"
+        action_txt = gain_action if gain_action else "(idle)"
+        msg_color = AMBER
+    status_line = f"{AMBER}Auto-gain:{RESET} {mode_tag} {msg_color}{action_txt}{cur_txt}{RESET}"
     grid_rows = _render_gain_grid(gain_history, time.monotonic())
     row_labels = ["100%", " 80%", " 60%", " 40%", " 20%"]
     print(_box_top(W))
     print(_box_row(status_line, W))
+    print(_box_row("", W))
     for i, row in enumerate(grid_rows):
         print(_box_row(f"{AMBER}{row_labels[i]} │{RESET}{row}", W))
     tick = "     " + "".join("┴" if (c % 5 == 0) else "─" for c in range(50))
