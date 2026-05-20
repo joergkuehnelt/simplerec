@@ -75,5 +75,5 @@ if [[ ! -f "$INSTALLER" ]]; then
     error "Could not find 'Install simplerec.command' after update."
 fi
 
-# Run the installer in the same terminal window
-bash "$INSTALLER"
+# Run the installer in the same terminal window (exec keeps the TTY intact)
+exec bash "$INSTALLER"
