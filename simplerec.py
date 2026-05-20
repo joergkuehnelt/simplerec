@@ -45,6 +45,8 @@ except Exception:
     Shazam = None
     SONGREC_AVAILABLE = False
 
+VERSION = "0.1"
+
 SAMPLE_RATE_FALLBACK = 48000
 BLOCKSIZE = 2048
 DTYPE = "float32"
@@ -328,6 +330,8 @@ class RecorderState:
     songrec_current_artist: str = "-"
     songrec_status: str = "not started"
     songrec_total_checks: int = 0
+    songrec_next_check_at: float = 0.0
+    songrec_last_tagid: str = ""
     filename_prefix: str = ""
     max_record_seconds: Optional[float] = None
     session_start_monotonic: Optional[float] = None
@@ -358,16 +362,17 @@ class RecorderState:
 
     async def _recognize_file(self, path: Path):
         if not self.songrec_enabled or Shazam is None:
-            return None, None, "ShazamIO not installed"
+            return None, None, "ShazamIO not installed", ""
         try:
             shazam = Shazam()
             result = await shazam.recognize(str(path))
+            tagid = result.get("tagid", "") if isinstance(result, dict) else ""
             track = result.get("track") if isinstance(result, dict) else None
             if track:
-                return (track.get("title") or "-", track.get("subtitle") or "-", "Match")
-            return None, None, "No match"
+                return (track.get("title") or "-", track.get("subtitle") or "-", "Match", tagid)
+            return None, None, "No match", tagid
         except Exception as exc:
-            return None, None, f"Error: {type(exc).__name__}"
+            return None, None, f"Error: {type(exc).__name__}", ""
 
     def start_songrec(self):
         if not self.songrec_enabled:
@@ -379,7 +384,14 @@ class RecorderState:
         def _runner():
             snippet_path = self.output_dir / SONGREC_TEMP_SNIPPET
             while not self.songrec_stop.is_set():
-                time.sleep(SONGREC_INTERVAL_SECONDS)
+                next_at = time.monotonic() + SONGREC_INTERVAL_SECONDS
+                with self.lock:
+                    self.songrec_next_check_at = next_at
+                # sleep in small steps so the countdown stays accurate
+                while time.monotonic() < next_at:
+                    if self.songrec_stop.is_set():
+                        return
+                    time.sleep(0.5)
                 if self.songrec_stop.is_set():
                     break
                 with self.lock:
@@ -396,11 +408,12 @@ class RecorderState:
                         continue
                     sf.write(str(snippet_path), audio, self.samplerate, subtype="PCM_16")
                     now = dt.datetime.now()
-                    title, artist, status = asyncio.run(self._recognize_file(snippet_path))
+                    title, artist, status, tagid = asyncio.run(self._recognize_file(snippet_path))
                     with self.lock:
                         self.songrec_last_check = now
                         self.songrec_total_checks += 1
                         self.songrec_status = status
+                        self.songrec_last_tagid = tagid or ""
                         if title and artist:
                             self.songrec_current_title = title
                             self.songrec_current_artist = artist
@@ -635,6 +648,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         song_artist = state.songrec_current_artist
         song_last_check = state.songrec_last_check.strftime("%H:%M:%S") if state.songrec_last_check else "-"
         song_last_match = state.songrec_last_match.strftime("%H:%M:%S") if state.songrec_last_match else "-"
+        song_next_at = state.songrec_next_check_at
+        song_tagid = state.songrec_last_tagid
     elapsed = state.elapsed_segment_seconds() if mode == "recording" else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -643,10 +658,10 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     else:
         status_label = f"{AMBER}{BOLD}‖ PAUSE{RESET}"
     clear_screen()
-    print(f"{AMBER}{BOLD} _____ ___ __  __ ___ _    ___ ___ ___  {RESET}")
-    print(f"{AMBER}{BOLD}/ __| | |  \\/  | _ \\ |  | __| _ \\ __| {RESET}")
-    print(f"{AMBER}{BOLD}\\__ \\ | || |\\/| |  _/ |__| _||   / _|  {RESET}")
-    print(f"{AMBER}{BOLD}|___/___|_|  |_|_| |____|___|_|_\\___|  {DIM}-beta{RESET}")
+    print(f"{AMBER}{BOLD} ___  _  __  __ ___  _     ___  ___  ___  {RESET}")
+    print(f"{AMBER}{BOLD}/ __|| ||  \\/  | _ \\| |   | __||  _\\| __| {RESET}")
+    print(f"{AMBER}{BOLD}\\__ \\| || |\\/| |  _/| |__ | _| | /  / _|  {RESET}")
+    print(f"{AMBER}{BOLD}|___/|_||_|  |_|_|  |____||___||_|  \\___|  {DIM}v{VERSION}{RESET}")
     print()
     print(f"{AMBER}Device : {_trunc(device_name, 71)}{RESET}")
     print(f"{AMBER}Folder : {_trunc(str(outdir), 71)}{RESET}")
@@ -666,8 +681,10 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(f"{AMBER}R:{RESET} [{colored_meter(db_r, hold_r)}] {GREEN}{db_r:6.1f} dBFS{RESET}   peak={peak_r:.3f}")
     print(f"{DIM}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS   Pending Save Jobs: {pending_conversions}{RESET}")
     print()
+    countdown = max(0, int(song_next_at - time.monotonic()))
+    tagid_txt = f"  ID:{_trunc(song_tagid, 20)}" if song_tagid else ""
     print(f"{AMBER}{BOLD}Song:{RESET} {GREEN}{BOLD}{_trunc(song_artist + ' - ' + song_title, 74)}{RESET}")
-    print(f"{DIM}Check: {song_last_check}  Match: {song_last_match}  {_trunc('Status: ' + song_status, 55)}{RESET}")
+    print(f"{DIM}Check: {song_last_check}  Match: {song_last_match}  Next: {countdown:2d}s{tagid_txt}{RESET}")
     with state.lock:
         song_fname = state._song_status_fname()
     print(f"{DIM}List : {_trunc(str(outdir / song_fname), 73)}{RESET}")
