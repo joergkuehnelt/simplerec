@@ -1314,6 +1314,11 @@ def main():
                             "AUTOGAIN ON" if state.auto_gain_enabled else "AUTOGAIN OFF (manual)"
                         )
                         state.gain_last_action_at = time.monotonic()
+                        if state.auto_gain_enabled:
+                            # Fresh start: clear weak-signal timer & cooldown so autogain
+                            # can react immediately to the current signal level.
+                            state.gain_weak_since = None
+                            state.gain_last_adjust = 0.0
                 elif key in ("0", "2", "4", "6", "8") and not state.auto_gain_enabled:
                     pct = {"0": 100, "2": 20, "4": 40, "6": 60, "8": 80}[key]
                     state.manual_set_gain(pct)
