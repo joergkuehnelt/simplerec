@@ -1484,15 +1484,38 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
 
     # ── Box 2 · Level Meter ─────────────────────────────────────────────────
     print(_box_top(W))
+    # VU section header + explanation
+    print(_box_row(
+        f"{AMBER}{BOLD}VU Meter{RESET}{AMBER}  "
+        f"{DIM}(RMS in dBFS, {RESET}{RED}│{AMBER}{DIM} = peak-hold, 0 dBFS = full scale){RESET}", W))
     print(_box_row(
         f"{AMBER}{BOLD}L {db_l:6.1f} dBFS {AMBER}[{colored_meter(db_l, hold_l)}{AMBER}]{RESET}", W))
     print(_box_row(
         f"{AMBER}{BOLD}R {db_r:6.1f} dBFS {AMBER}[{colored_meter(db_r, hold_r)}{AMBER}]{RESET}", W))
-    print(_box_row(
-        f"{AMBER}60s peak      {AMBER}[{clip_history_bar(clip_history_snapshot)}{AMBER}]{RESET}", W))
+    # dBFS ruler aligned under the 60-cell meter bar
+    _ruler = list(" " * METER_WIDTH)
+    for _lbl, _pos in (("-40", 0), ("-30", 15), ("-20", 30), ("-10", 45)):
+        for _i, _c in enumerate(_lbl):
+            _ruler[_pos + _i] = _c
+    _ruler[METER_WIDTH - 1] = "0"
+    print(_box_row(f"{DIM}{AMBER}              {''.join(_ruler)} {RESET}", W))
     print(_box_row(
         f"{AMBER}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS"
         f"   Pending: {pending_conversions}{RESET}", W))
+    # Visual separator between VU meter and 60s peak history
+    print(f"{AMBER}╟{'─' * (W - 2)}╢{RESET}")
+    # 60s peak history header + the heatmap row + colour legend
+    print(_box_row(
+        f"{AMBER}{BOLD}60s Peak History{RESET}{AMBER}  "
+        f"{DIM}(1 cell = 1 s, peak dBFS, oldest left → now right){RESET}", W))
+    print(_box_row(
+        f"{AMBER}peak/sec      {AMBER}[{clip_history_bar(clip_history_snapshot)}{AMBER}]{RESET}", W))
+    print(_box_row(
+        f"{AMBER}Legend: {GREY}·{AMBER}<-30  "
+        f"{GREEN}▂{AMBER}<-18  "
+        f"{AMBER}▄<-6  "
+        f"{RED_BRIGHT}▆{AMBER}<-3  "
+        f"{RED}█{AMBER}≥-3 dBFS{RESET}", W))
     # Blinking clipping banner (white on red), shown only while peak is clipping.
     if max(peak_l, peak_r) >= LEVEL_CLIP_LINEAR or simulate_clip_active:
         print(_box_row(
