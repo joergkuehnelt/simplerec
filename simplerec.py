@@ -1426,13 +1426,13 @@ while true; do
   echo
   echo "${{h}}$(date '+Refreshed: %H:%M:%S')${{r}}"
   echo
-  ls -lht "${{DIR}}" 2>/dev/null \\
-    | awk 'NR>1{{n=$9;for(i=10;i<=NF;i++)n=n FS $i;print $5,$6,$7,$8,n}}' \\
+  ls -lh "${{DIR}}" 2>/dev/null \\
+    | awk 'NR>1{{n=$9;for(i=10;i<=NF;i++)n=n FS $i;print $6,$7,$8,n}}' \\
     | column -t \\
     | while IFS= read -r line; do
         printf '%s%s%s\\n' "$g" "$line" "$r"
       done
-  sleep 600
+  sleep 60
 done
 """
 
