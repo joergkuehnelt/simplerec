@@ -219,44 +219,45 @@ def colored_meter(dbfs: float, peak_hold_db: float, width: int = METER_WIDTH) ->
     return "".join(out) + RESET
 
 
-def clip_history_grid(history: list[float], cols: int = 30) -> list[str]:
-    """Return 4 strings (top → bottom: clip / danger / ok / low), each `cols`
-    visible characters wide.
+def clip_history_peakline(history: list[float], cols: int = 60) -> list[str]:
+    """Return 6 band-row strings showing one peak marker per second placed in
+    the row whose dB band contains that second's peak. No body fill below the
+    cap. Empty cells are blank. Newest sample is on the right.
 
-    Each column aggregates 2 seconds of per-second peak history into a tier:
-        0 = clip   (≥ -3 dBFS)
-        1 = danger (≥ -6 dBFS)
-        2 = ok     (≥ -18 dBFS)
-        3 = low    (≥ -40 dBFS)
-        4 = silence (everything below)
-    A row r is filled (●) when the column's top tier is at or above r, so a
-    high-level column also lights up every row below it (cumulative bar).
-    Empty cells are dimmed grey dots so the grid keeps a constant footprint.
+    Each row is rendered as ``"<8-char label> │<cols chars>"`` so the bar `│`
+    sits at a fixed column and the data area is exactly `cols` chars wide.
     """
-    needed = cols * 2
-    cells = list(history)[-needed:]
-    if len(cells) < needed:
-        cells = [-120.0] * (needed - len(cells)) + cells
-    buckets = [max(cells[i * 2], cells[i * 2 + 1]) for i in range(cols)]
-    row_color = (RED, RED_BRIGHT, AMBER, GREEN)
-    rows: list[list[str]] = [[] for _ in range(4)]
-    for db in buckets:
-        if db >= -3.0:
-            tier = 0
-        elif db >= -6.0:
-            tier = 1
-        elif db >= -18.0:
-            tier = 2
-        elif db >= -40.0:
-            tier = 3
-        else:
-            tier = 4
-        for r in range(4):
-            if tier <= r:
-                rows[r].append(f"{row_color[r]}{BOLD}●")
+    cells = list(history)[-cols:]
+    if len(cells) < cols:
+        cells = [-120.0] * (cols - len(cells)) + cells
+    # Bands top → bottom. ``lo`` is the inclusive lower bound; a sample falls
+    # into the first row whose lo it meets or exceeds.
+    bands = (
+        ("  0 dBFS", -3.0,   RED),         # clip zone
+        (" -3 dBFS", -6.0,   RED_BRIGHT),  # danger
+        (" -6 dBFS", -12.0,  AMBER),       # hot nominal
+        ("-12 dBFS", -18.0,  AMBER),       # nominal
+        ("-18 dBFS", -30.0,  GREEN),       # safe
+        ("-30 dBFS", -120.0, GREEN),       # low / silence
+    )
+    row_for_cell: list[int] = []
+    for db in cells:
+        idx = len(bands) - 1
+        for i, (_, lo, _) in enumerate(bands):
+            if db >= lo:
+                idx = i
+                break
+        row_for_cell.append(idx)
+    out: list[str] = []
+    for r, (lbl, _, color) in enumerate(bands):
+        marks: list[str] = []
+        for ci in row_for_cell:
+            if ci == r:
+                marks.append(f"{color}{BOLD}▮{RESET}")
             else:
-                rows[r].append(f"{DIM}{GREY}·")
-    return ["".join(r) + RESET for r in rows]
+                marks.append(" ")
+        out.append(f"{DIM}{AMBER}{lbl} │{RESET}{''.join(marks)}")
+    return out
 
 
 def _set_input_gain(pct: int) -> None:
@@ -1519,14 +1520,21 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         f"   Pending: {pending_conversions}{RESET}", W))
     # Visual separator between VU meter and 60s peak history
     print(f"{AMBER}╟{'─' * (W - 2)}╢{RESET}")
-    # 60s peak history: 4-row × 30-col dot grid (1 column = 2 s).
-    print(_box_row(f"{AMBER}{BOLD}60s Peak History{RESET}", W))
-    _grid_rows = clip_history_grid(clip_history_snapshot, cols=30)
-    for _lbl, _line in zip(("clip  ", "danger", "ok    ", "low   "), _grid_rows):
-        print(_box_row(f"{AMBER}{_lbl} {_line}{RESET}", W))
-    # Time axis aligned under the 30-column grid (7-char label prefix).
-    _axis = f"{'-60 seconds':<{30 - len('now')}}now"
-    print(_box_row(f"{DIM}{AMBER}       {_axis}{RESET}", W))
+    # 60s peak history: 6-band peak-line, 1 column = 1 second.
+    print(_box_row(
+        f"{AMBER}{BOLD}60s Peak History{RESET}"
+        f"{AMBER}{DIM}  (1 col = 1 s · newest right){RESET}", W))
+    for _row in clip_history_peakline(clip_history_snapshot, cols=60):
+        print(_box_row(_row, W))
+    # Baseline with 10-second tick marks (┴ at -50/-40/-30/-20/-10/now).
+    _ticks = "".join(
+        "┴" if i in (0, 10, 20, 30, 40, 50, 59) else "─"
+        for i in range(60)
+    )
+    print(_box_row(f"{DIM}{AMBER}         └{_ticks}{RESET}", W))
+    # Time axis: -60s on the left, now on the right, aligned under data.
+    _axis = "-60s" + " " * (60 - len("-60s") - len("now")) + "now"
+    print(_box_row(f"{DIM}{AMBER}          {_axis}{RESET}", W))
     # Blinking clipping banner (white on red), shown only while peak is clipping.
     if max(peak_l, peak_r) >= LEVEL_CLIP_LINEAR or simulate_clip_active:
         print(_box_row(
