@@ -253,7 +253,7 @@ def _render_level_map(level_map: list[dict], bar_width: int = 52) -> None:
 
 
 def _print_playlist(folder: Path) -> None:
-    playlists = sorted(folder.glob("*.txt"))
+    playlists = sorted(p for p in folder.glob("*.txt") if not p.name.endswith(".labels.txt"))
     if not playlists:
         return
     pl = playlists[0]
@@ -391,35 +391,43 @@ def _open_in_audacity(m4a: Path, labels_path: Path | None) -> None:
         print(f"\r  {YELLOW}Audacity opened  —  to auto-import labels: Preferences → Modules → mod-script-pipe → Enabled → restart Audacity{RESET}")
         return
 
-    # ── Send ImportLabels command, read response ──────────────────────────
-    response: list[str] = []
+    # ── Send NewLabelTrack + ImportLabels commands ────────────────────────
+    def _send_cmd(cmd: str) -> str:
+        """Send one command, return response (blocks until \0 received)."""
+        resp: list[str] = []
 
-    def _read_response() -> None:
+        def _r() -> None:
+            try:
+                with open(pipe_from, "r") as fh:
+                    buf = ""
+                    while True:
+                        ch = fh.read(1)
+                        if not ch or ch == "\0":
+                            break
+                        buf += ch
+                resp.append(buf.strip())
+            except OSError:
+                pass
+
+        t = threading.Thread(target=_r, daemon=True)
+        t.start()
         try:
-            with open(pipe_from, "r") as fh:
-                buf = ""
-                while True:
-                    ch = fh.read(1)
-                    if not ch or ch == "\0":
-                        break
-                    buf += ch
-            response.append(buf.strip())
+            with open(pipe_to, "w") as fh:
+                fh.write(cmd + "\n")
         except OSError:
             pass
+        t.join(timeout=6.0)
+        return resp[0] if resp else ""
 
-    reader = threading.Thread(target=_read_response, daemon=True)
-    reader.start()
     try:
-        with open(pipe_to, "w") as fh:
-            fh.write(f'ImportLabels: Filename="{labels_path}"\n')
+        _send_cmd("NewLabelTrack:")
+        resp = _send_cmd(f'ImportLabels: Filename="{labels_path}"')
     except OSError as exc:
         print(f"\r  {YELLOW}Pipe write error: {exc}{RESET}          ")
         return
 
-    reader.join(timeout=6.0)
-    resp_txt = response[0] if response else ""
-    if resp_txt and "error" in resp_txt.lower():
-        print(f"\r  {YELLOW}Audacity: {resp_txt}{RESET}          ")
+    if resp and "error" in resp.lower():
+        print(f"\r  {YELLOW}Audacity: {resp}{RESET}          ")
     else:
         print(f"\r  {GREEN}{BOLD}Audacity opened with labels imported.{RESET}                 ")
 
