@@ -340,8 +340,6 @@ def _export_audacity_labels(folder: Path) -> None:
             for t, label in labels:
                 # Audacity point label: start\tend\tlabel
                 f.write(f"{t:.6f}\t{t:.6f}\t{label}\n")
-        print(f"\n{GREEN}{BOLD}Audacity labels saved:{RESET} {out_path.name}")
-        print(f"  {GREY}File > Import > Labels\u2026 in Audacity{RESET}")
     except OSError as e:
         print(f"\n{RED}Could not write labels file: {e}{RESET}")
 
@@ -390,9 +388,7 @@ def _open_in_audacity(m4a: Path, labels_path: Path | None) -> None:
             break
         time.sleep(0.5)
     else:
-        print(f"\r  {YELLOW}Audacity opened  —  scripting pipe not available.{RESET}          ")
-        print(f"  {DIM}Enable once: Audacity → Preferences → Modules → mod-script-pipe → Enabled → restart Audacity{RESET}")
-        print(f"  Import labels manually: File › Import › Labels…  →  {GREY}{labels_path.name}{RESET}")
+        print(f"\r  {YELLOW}Audacity opened  —  to auto-import labels: Preferences → Modules → mod-script-pipe → Enabled → restart Audacity{RESET}")
         return
 
     # ── Send ImportLabels command, read response ──────────────────────────
