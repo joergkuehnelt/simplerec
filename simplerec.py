@@ -291,9 +291,23 @@ def clip_history_linegraph(history: list[float], cols: int = 60) -> list[str]:
     # Row colours matching the original 10-band grid (top → bottom):
     # 0 dBFS = RED, -3 = RED_BRIGHT, -6…-15 = AMBER, -18…-27 = GREEN
     row_colors = [RED, RED_BRIGHT, AMBER, AMBER, AMBER, AMBER, GREEN, GREEN, GREEN, GREEN]
+    # Rows that get a dim dotted reference line (indices: row 1 = -3 dBFS, row 3 = -9 dBFS)
+    ref_rows = {1, 3}
     out: list[str] = []
     for i, line in enumerate(chart_str.splitlines()):
         color = row_colors[i] if i < len(row_colors) else GREEN
+        if i in ref_rows:
+            # Draw a dim dotted reference line in the data area (spaces → ·).
+            # The data area starts after the first │ in the line.
+            sep = line.find('│')
+            if sep >= 0:
+                label = line[:sep + 1]
+                data = ''.join(
+                    f"{DIM}{GREY}·{RESET}{color}" if c == ' ' else c
+                    for c in line[sep + 1:]
+                )
+                out.append(f"{color}{label}{data}{RESET}")
+                continue
         out.append(f"{color}{line}{RESET}")
     return out
 
