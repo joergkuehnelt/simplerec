@@ -1404,6 +1404,18 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
     return out
 
 
+def _request_fullscreen() -> None:
+    """Ask Terminal.app to maximise its front window (best-effort, silent on error)."""
+    try:
+        subprocess.run(
+            ["osascript", "-e",
+             'tell application "Terminal" to set zoomed of front window to true'],
+            capture_output=True, timeout=2.0, check=False,
+        )
+    except Exception:
+        pass
+
+
 def render_ui(state: RecorderState, device_name: str, preview_end: Optional[float]):
     with state.lock:
         mode = state.mode
@@ -1470,6 +1482,16 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     else:
         status_label = f"{AMBER}{BOLD}‖ PAUSE{RESET}"
     W = 80
+    try:
+        _term_cols = os.get_terminal_size().columns
+    except OSError:
+        _term_cols = W
+    PAD = " " * max(0, (_term_cols - W) // 2)
+
+    def print(s="", **kw):  # shadow builtin: prefix every line with left-padding  # noqa: A001
+        import builtins
+        builtins.print(PAD + s if s else "", **kw)
+
     clear_screen()
 
     # ── Header ──────────────────────────────────────────────────────────────
@@ -1629,6 +1651,7 @@ def main():
         return
 
     require_macos_tools()
+    _request_fullscreen()
     signal.signal(signal.SIGINT, signal.default_int_handler)
     print("macOS CLI Audio Recorder (.m4a, Stereo, Song Recognition)\n")
     print("Tip: run with --help or --help-messages for usage information.\n")
