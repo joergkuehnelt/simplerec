@@ -24,6 +24,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -277,9 +279,153 @@ def _print_playlist(folder: Path) -> None:
                 meta   = "  " + "  \u00b7  ".join(p for p in [genre, year] if p) if (genre or year) else ""
                 print(f"  {GREEN}{elapsed}{RESET}  {BOLD}{artist}{RESET} \u2013 {title}{GREY}{meta}{RESET}")
             else:
-                print(f"  {GREY}{elapsed}  \u2013 no match \u2013{RESET}")
+                print(f"  {BLUE}{elapsed}  \u2013 no match \u2013{RESET}")
     except OSError as e:
         print(f"  {RED}(could not read playlist: {e}){RESET}")
+
+
+def _hms_to_seconds(hms: str) -> float:
+    """Convert HH:MM:SS or MM:SS or SS string to float seconds."""
+    parts = hms.strip().split(":")
+    try:
+        if len(parts) == 3:
+            return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+        if len(parts) == 2:
+            return int(parts[0]) * 60 + float(parts[1])
+        return float(parts[0])
+    except (ValueError, IndexError):
+        return 0.0
+
+
+def _export_audacity_labels(folder: Path) -> None:
+    """
+    Write an Audacity point-label file next to the playlist.
+    Format: start\tend\tlabel  (tab-separated, start == end for point labels)
+    Songs get label "Artist \u2013 Title"; gain-adjust events get "\u2699 message".
+    No-match rows are skipped (no useful label text).
+    """
+    playlists = [p for p in sorted(folder.glob("*.txt"))
+                 if not p.name.endswith(".labels.txt")]
+    if not playlists:
+        return
+    pl = playlists[0]
+    try:
+        lines = pl.read_text(encoding="utf-8").strip().splitlines()
+    except OSError:
+        return
+
+    labels: list[tuple[float, str]] = []
+    for ln in lines:
+        ln = ln.strip()
+        if not ln:
+            continue
+        parts = ln.split(";")
+        if len(parts) < 2:
+            continue
+        t = _hms_to_seconds(parts[1])
+        if len(parts) >= 4 and parts[2].strip().upper() == "CLIP-ADJUST":
+            labels.append((t, f"\u2699 {parts[3].strip()}"))
+        elif len(parts) >= 4 and parts[2].strip():
+            artist = parts[2].strip()
+            title  = parts[3].strip()
+            labels.append((t, f"{artist} \u2013 {title}"))
+        # no-match rows: omitted from label file
+
+    if not labels:
+        return
+
+    out_path = pl.parent / (pl.stem + ".labels.txt")
+    try:
+        with open(out_path, "w", encoding="utf-8") as f:
+            for t, label in labels:
+                # Audacity point label: start\tend\tlabel
+                f.write(f"{t:.6f}\t{t:.6f}\t{label}\n")
+        print(f"\n{GREEN}{BOLD}Audacity labels saved:{RESET} {out_path.name}")
+        print(f"  {GREY}File > Import > Labels\u2026 in Audacity{RESET}")
+    except OSError as e:
+        print(f"\n{RED}Could not write labels file: {e}{RESET}")
+
+
+def _find_audacity_app() -> Path | None:
+    """Return the Audacity.app path or None if not installed."""
+    for candidate in (
+        Path("/Applications/Audacity.app"),
+        Path.home() / "Applications" / "Audacity.app",
+    ):
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _open_in_audacity(m4a: Path, labels_path: Path | None) -> None:
+    """
+    Open the M4A in Audacity, then import the label file automatically
+    via Audacity's mod-script-pipe scripting interface.
+
+    Falls back to clear instructions if the pipe is unavailable
+    (mod-script-pipe is an optional module that must be enabled once in
+    Audacity > Preferences > Modules).
+    """
+    app = _find_audacity_app()
+    if app is None:
+        print(f"  {YELLOW}Audacity not found in /Applications.{RESET}")
+        return
+
+    # ── Launch Audacity with the audio file ───────────────────────────────
+    subprocess.Popen(["open", "-a", "Audacity", str(m4a)])
+
+    if labels_path is None or not labels_path.exists():
+        print(f"  {GREEN}Audacity opened.{RESET}")
+        return
+
+    # ── Wait for the mod-script-pipe FIFO to appear ───────────────────────
+    uid       = os.getuid()
+    pipe_to   = Path(f"/tmp/audacity_script_pipe.to.{uid}")
+    pipe_from = Path(f"/tmp/audacity_script_pipe.from.{uid}")
+
+    print(f"  {DIM}Waiting for Audacity scripting pipe…{RESET}", end="", flush=True)
+    deadline = time.monotonic() + 15.0
+    while time.monotonic() < deadline:
+        if pipe_to.exists() and pipe_from.exists():
+            break
+        time.sleep(0.5)
+    else:
+        print(f"\r  {YELLOW}Audacity opened  —  scripting pipe not available.{RESET}          ")
+        print(f"  {DIM}Enable once: Audacity → Preferences → Modules → mod-script-pipe → Enabled → restart Audacity{RESET}")
+        print(f"  Import labels manually: File › Import › Labels…  →  {GREY}{labels_path.name}{RESET}")
+        return
+
+    # ── Send ImportLabels command, read response ──────────────────────────
+    response: list[str] = []
+
+    def _read_response() -> None:
+        try:
+            with open(pipe_from, "r") as fh:
+                buf = ""
+                while True:
+                    ch = fh.read(1)
+                    if not ch or ch == "\0":
+                        break
+                    buf += ch
+            response.append(buf.strip())
+        except OSError:
+            pass
+
+    reader = threading.Thread(target=_read_response, daemon=True)
+    reader.start()
+    try:
+        with open(pipe_to, "w") as fh:
+            fh.write(f'ImportLabels: Filename="{labels_path}"\n')
+    except OSError as exc:
+        print(f"\r  {YELLOW}Pipe write error: {exc}{RESET}          ")
+        return
+
+    reader.join(timeout=6.0)
+    resp_txt = response[0] if response else ""
+    if resp_txt and "error" in resp_txt.lower():
+        print(f"\r  {YELLOW}Audacity: {resp_txt}{RESET}          ")
+    else:
+        print(f"\r  {GREEN}{BOLD}Audacity opened with labels imported.{RESET}                 ")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -405,6 +551,7 @@ def main() -> None:
 
     # ── Step 5: playlist & photos ────────────────────────────────────────────
     _print_playlist(chosen)
+    _export_audacity_labels(chosen)
 
     photos = sorted(chosen.glob("*.jpg"))
     if photos:
@@ -412,7 +559,20 @@ def main() -> None:
         for p in photos:
             print(f"  {p.name}")
 
-    print(f"\n{AMBER}{'═' * 72}{RESET}\n")
+    print(f"\n{AMBER}{'═' * 72}{RESET}")
+
+    # ── Step 6: offer to open in Audacity ─────────────────────────────────────
+    m4a_files = _find_m4a(chosen)   # re-fetch (may be empty if no m4a)
+    if m4a_files and _find_audacity_app() is not None:
+        print()
+        ans = input(f"Open in Audacity with labels? [Y/n]: ").strip().lower()
+        if ans in ("", "y", "yes"):
+            labels_candidates = [p for p in sorted(chosen.glob("*.labels.txt"))]
+            labels_file = labels_candidates[0] if labels_candidates else None
+            for m4a in m4a_files:
+                _open_in_audacity(m4a, labels_file)
+
+    print()
 
 
 if __name__ == "__main__":
