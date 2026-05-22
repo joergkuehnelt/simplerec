@@ -25,6 +25,7 @@ echo -e "${BOLD}"
 echo "  ╔══════════════════════════════════════════════╗"
 echo "  ║         simplerec  —  Updater                ║"
 echo "  ║   Downloads latest version from GitHub       ║"
+echo "  ║   then re-runs the installer                 ║"
 echo "  ╚══════════════════════════════════════════════╝"
 echo -e "${RESET}"
 
