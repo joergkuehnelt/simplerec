@@ -410,16 +410,22 @@ tell application "System Events"
     -- Use frontmost process so we don't depend on the exact process name
     set audProc to first application process whose frontmost is true
     tell audProc
-        -- Retry clicking File > Import > Labels until menus are enabled
+        -- Retry clicking File > Import > Labels until menus are enabled.
+        -- Try both "Labels..." (ASCII) and "Labels\u2026" (Unicode ellipsis).
         set tryCount to 0
         repeat
             try
-                click menu item "Labels\u2026" of menu 1 of ¬
-                    menu item "Import" of menu "File" of menu bar item "File" of menu bar 1
+                try
+                    click menu item "Labels..." of menu 1 of ¬
+                        menu item "Import" of menu "File" of menu bar item "File" of menu bar 1
+                on error
+                    click menu item "Labels\u2026" of menu 1 of ¬
+                        menu item "Import" of menu "File" of menu bar item "File" of menu bar 1
+                end try
                 exit repeat
-            on error
+            on error errMsg
                 set tryCount to tryCount + 1
-                if tryCount > 25 then error "Audacity menus not ready after 25 s"
+                if tryCount > 25 then error "Audacity menus not ready: " & errMsg
                 delay 1
             end try
         end repeat
@@ -439,12 +445,13 @@ end tell
     if r.returncode == 0:
         print(f"\r  {GREEN}{BOLD}Audacity opened with labels imported.{RESET}          ")
     else:
-        err = r.stderr.strip().split(":")[-1].strip() if r.stderr else ""
         print(f"\r  {YELLOW}Labels not auto-imported.{RESET}          ")
-        if "not allowed" in r.stderr or "1002" in r.stderr:
-            print(f"  {DIM}Grant access: System Settings → Privacy & Security → Accessibility → Terminal → enable{RESET}")
-        elif err:
-            print(f"  {DIM}{err[:100]}{RESET}")
+        if any(x in r.stderr for x in ("1719", "not allowed", "Hilfszugriff", "assistive")):
+            print(f"  {DIM}One-time fix: System Settings → Privacy & Security → Accessibility → Terminal → enable{RESET}")
+        else:
+            err = r.stderr.strip().split(":")[-1].strip() if r.stderr else ""
+            if err:
+                print(f"  {DIM}{err[:120]}{RESET}")
         print(f"  Import manually: File › Import › Labels… › {GREY}{labels_path.name}{RESET}")
 
 
