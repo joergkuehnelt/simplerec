@@ -1448,11 +1448,13 @@ while true; do
     echo
   fi
   count=0
+  last_fpath=""
   printf "${{h}}%3s  %-10s  %-5s  %-5s${{r}}\\n" "#" "Date" "Start" "End"
   printf "${{h}}%s${{r}}\\n" "---  ----------  -----  -----"
   while IFS= read -r fpath; do
     [ -z "${{fpath}}" ] && continue
     count=$((count + 1))
+    last_fpath="${{fpath}}"
     # Strip extension(s) and leading dot (temp .part.wav files are hidden)
     fname=$(basename "${{fpath}}")
     fname="${{fname%.part.wav}}"
@@ -1484,6 +1486,13 @@ while true; do
     echo "${{g}}(no recordings yet)${{r}}"
   else
     echo "${{g}}${{count}} session(s)${{r}}"
+    # Check if the last session folder had file changes in the last 2 minutes
+    if [ -n "${{last_fpath}}" ]; then
+      last_dir=$(dirname "${{last_fpath}}")
+      if find "${{last_dir}}" -maxdepth 1 -mmin -2 2>/dev/null | grep -q .; then
+        echo "${{h}}  ● Session ${{count}} is writing a file${{r}}"
+      fi
+    fi
   fi
   sleep 60
 done
