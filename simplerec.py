@@ -1417,16 +1417,13 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
 
 
 def _position_terminal_left() -> None:
-    """Snap the Terminal window to the left half of the screen (best-effort)."""
+    """Enter macOS Terminal fullscreen mode (best-effort)."""
     script = '''
-tell application "Finder"
-    set _b to bounds of window of desktop
-    set _w to (item 3 of _b) div 2
-    set _h to item 4 of _b
-end tell
 tell application "Terminal"
-    set bounds of front window to {0, 0, _w, _h}
-    set number of columns of front window to 80
+    activate
+    tell application "System Events"
+        keystroke "f" using {command down, control down}
+    end tell
 end tell
 '''
     try:
