@@ -13,7 +13,8 @@ if [[ -z "$ITERM_SESSION_ID" && -d "/Applications/iTerm.app" ]]; then
         BREW_INIT='eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true'
     fi
     # Write a self-contained runner — avoids all AppleScript quoting hazards
-    RUNNER=$(mktemp /tmp/simplerec_runner_XXXXXX.sh)
+    # Note: macOS mktemp requires X's at the END of the template (no suffix).
+    RUNNER=$(mktemp /tmp/simplerec_runner_XXXXXX)
     cat > "$RUNNER" <<RUNNER_EOF
 #!/usr/bin/env bash
 $BREW_INIT
@@ -25,12 +26,15 @@ read -r _x
 rm -f "$RUNNER"
 RUNNER_EOF
     chmod +x "$RUNNER"
-    osascript \
-        -e 'tell application "iTerm2"' \
-        -e '  activate' \
-        -e '  set newWin to (create window with default profile)' \
-        -e "  tell current session of newWin to write text \"bash $RUNNER\"" \
-        -e 'end tell'
+    osascript <<APPLESCRIPT
+tell application "iTerm2"
+    activate
+    set newWin to (create window with default profile)
+    tell current session of newWin
+        write text "bash $RUNNER"
+    end tell
+end tell
+APPLESCRIPT
     exit 0  # Terminal closes this window on clean exit
 fi
 
