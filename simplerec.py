@@ -1404,18 +1404,6 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
     return out
 
 
-def _request_fullscreen() -> None:
-    """Ask Terminal.app to maximise its front window (best-effort, silent on error)."""
-    try:
-        subprocess.run(
-            ["osascript", "-e",
-             'tell application "Terminal" to set zoomed of front window to true'],
-            capture_output=True, timeout=2.0, check=False,
-        )
-    except Exception:
-        pass
-
-
 def render_ui(state: RecorderState, device_name: str, preview_end: Optional[float]):
     with state.lock:
         mode = state.mode
@@ -1651,7 +1639,6 @@ def main():
         return
 
     require_macos_tools()
-    _request_fullscreen()
     signal.signal(signal.SIGINT, signal.default_int_handler)
     print("macOS CLI Audio Recorder (.m4a, Stereo, Song Recognition)\n")
     print("Tip: run with --help or --help-messages for usage information.\n")
