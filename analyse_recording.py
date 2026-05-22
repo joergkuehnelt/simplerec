@@ -405,19 +405,24 @@ def _open_in_audacity(m4a: Path, labels_path: Path | None) -> None:
     esc = str(labels_path).replace("\\", "\\\\").replace('"', '\\"')
     script = f"""
 tell application "Audacity" to activate
-delay 0.5
+delay 1.0
 tell application "System Events"
-    tell process "Audacity"
-        -- Poll until the menu bar is ready (Audacity still loading audio)
-        set waited to 0
-        repeat while waited < 30
-            if exists menu bar item "File" of menu bar 1 then exit repeat
-            delay 0.5
-            set waited to waited + 1
+    -- Use frontmost process so we don't depend on the exact process name
+    set audProc to first application process whose frontmost is true
+    tell audProc
+        -- Retry clicking File > Import > Labels until menus are enabled
+        set tryCount to 0
+        repeat
+            try
+                click menu item "Labels\u2026" of menu 1 of ¬
+                    menu item "Import" of menu "File" of menu bar item "File" of menu bar 1
+                exit repeat
+            on error
+                set tryCount to tryCount + 1
+                if tryCount > 25 then error "Audacity menus not ready after 25 s"
+                delay 1
+            end try
         end repeat
-        delay 0.3
-        click menu item "Labels\u2026" of menu 1 of ¬
-            menu item "Import" of menu "File" of menu bar item "File" of menu bar 1
         delay 0.8
         -- Cmd+Shift+G opens "Go to the folder" sheet in the file dialog
         keystroke "g" using {{command down, shift down}}
