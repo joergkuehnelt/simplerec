@@ -1518,16 +1518,17 @@ tell application "Finder"
     set _b to bounds of window of desktop
     set _sw to item 3 of _b
     set _sh to item 4 of _b
-    set _lw to _sw div 2
 end tell
 set _script to "{as_script}"
 tell application "Terminal"
     set _tab to do script "bash " & quoted form of _script
-    delay 0.8
+    delay 1.2
     set _win to window of _tab
-    set bounds of _win to {{_lw, 0, _sw, _sh}}
+    -- Set columns on the tab; Terminal resizes the window to fit exactly 60 cols.
+    -- Do NOT set bounds before this — a competing bounds change makes Terminal ignore
+    -- the column count. Set columns first, wait, then read back the actual pixel width.
     set number of columns of _tab to 60
-    delay 0.5
+    delay 1.2
     set _wb to bounds of _win
     set _ww to (item 3 of _wb) - (item 1 of _wb)
     set bounds of _win to {{_sw - _ww, 0, _sw, _sh}}
