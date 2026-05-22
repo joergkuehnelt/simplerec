@@ -15,6 +15,7 @@ import signal
 import termios
 import threading
 import subprocess
+import tempfile
 import datetime as dt
 import asyncio
 import re
@@ -1407,20 +1408,53 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
 def _open_dir_window(output_dir: Path) -> None:
     """Open a second Terminal window on the right half of the screen.
 
-    Shows a refreshing 'ls -la' of the output directory, updated every 10 min.
-    Positioned on the right half of the screen, 60 columns wide.
+    Writes a temp watch script with tput colors, then opens it in Terminal.
+    Called once when recording begins. Positioned right half, 60 columns.
     """
-    as_path = str(output_dir).replace("\\", "\\\\").replace('"', '\\"')
-    script = f"""\
+    # Escape the output path for embedding in a bash single-quoted string.
+    bash_path = str(output_dir).replace("'", "'\\''")
+
+    shell_script = f"""\
+#!/bin/bash
+DIR='{bash_path}'
+while true; do
+  clear
+  h=$(tput setaf 3 2>/dev/null)
+  g=$(tput setaf 2 2>/dev/null)
+  r=$(tput sgr0 2>/dev/null)
+  echo "${{h}}${{DIR}}${{r}}"
+  echo
+  echo "${{h}}$(date '+Refreshed: %H:%M:%S')${{r}}"
+  echo
+  ls -lht "${{DIR}}" 2>/dev/null \\
+    | awk 'NR>1{{n=$9;for(i=10;i<=NF;i++)n=n FS $i;print $5,$6,$7,$8,n}}' \\
+    | column -t \\
+    | while IFS= read -r line; do
+        printf '%s%s%s\\n' "$g" "$line" "$r"
+      done
+  sleep 600
+done
+"""
+
+    watch_script = Path(tempfile.gettempdir()) / f"simplerec_watch_{os.getpid()}.sh"
+    try:
+        watch_script.write_text(shell_script, encoding="utf-8")
+        watch_script.chmod(0o700)
+    except OSError:
+        return
+
+    # Embed the script path safely via AppleScript's 'quoted form of'.
+    as_script = str(watch_script).replace("\\", "\\\\").replace('"', '\\"')
+    applescript = f"""\
 tell application "Finder"
     set _b to bounds of window of desktop
     set _sw to item 3 of _b
     set _sh to item 4 of _b
     set _lw to _sw div 2
 end tell
-set _dir to "{as_path}"
+set _script to "{as_script}"
 tell application "Terminal"
-    do script "while true; do clear; echo " & quoted form of _dir & "; echo; date '+Refreshed: %H:%M:%S'; echo; ls -lht " & quoted form of _dir & " | awk 'NR>1{{n=$9;for(i=10;i<=NF;i++)n=n FS $i;print $5,$6,$7,$8,n}}' | column -t; sleep 600; done"
+    do script "bash " & quoted form of _script
     delay 0.8
     set bounds of front window to {{_lw, 0, _sw, _sh}}
     set number of columns of front window to 60
@@ -1429,7 +1463,7 @@ end tell
     try:
         subprocess.run(
             ["osascript"],
-            input=script.encode("utf-8"),
+            input=applescript.encode("utf-8"),
             capture_output=True, timeout=5.0, check=False,
         )
     except Exception:
@@ -1698,7 +1732,6 @@ def main():
     print("macOS CLI Audio Recorder (.m4a, Stereo, Song Recognition)\n")
     print("Tip: run with --help or --help-messages for usage information.\n")
     output_dir = choose_output_dir()
-    _open_dir_window(output_dir)
     max_minutes = ask_recording_minutes()
     filename_prefix = ask_filename_prefix()
     dj_photos = ask_dj_photos()
@@ -1761,6 +1794,7 @@ def main():
                         msg = classify_level(max(state.preview_peak_lr))
                     print(f"\n{AMBER}Preview finished: {msg}{RESET}")
                     time.sleep(0.5)
+                    _open_dir_window(output_dir)
                     state.start_segment()
                 if state.mode in ("recording", "playlist") and state.elapsed_segment_seconds() >= SEGMENT_SECONDS:
                     saved = state.stop_and_save()
