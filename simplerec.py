@@ -1404,6 +1404,27 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
     return out
 
 
+def _position_terminal_left() -> None:
+    """Snap the Terminal window to the left half of the screen (best-effort)."""
+    script = '''
+tell application "Finder"
+    set _b to bounds of window of desktop
+    set _w to (item 3 of _b) div 2
+    set _h to item 4 of _b
+end tell
+tell application "Terminal"
+    set bounds of front window to {0, 0, _w, _h}
+end tell
+'''
+    try:
+        subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, timeout=3.0, check=False,
+        )
+    except Exception:
+        pass
+
+
 def render_ui(state: RecorderState, device_name: str, preview_end: Optional[float]):
     with state.lock:
         mode = state.mode
@@ -1639,6 +1660,7 @@ def main():
         return
 
     require_macos_tools()
+    _position_terminal_left()
     signal.signal(signal.SIGINT, signal.default_int_handler)
     print("macOS CLI Audio Recorder (.m4a, Stereo, Song Recognition)\n")
     print("Tip: run with --help or --help-messages for usage information.\n")
