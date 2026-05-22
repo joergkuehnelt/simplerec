@@ -1486,7 +1486,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
 
     bar2 = (
         f"  {_key_btn('P')}=PLAYLIST ONLY  "
-        f"{_key_btn('U')}=UPDATE"
+        f"{_key_btn('U')}=UPDATE  "
+        f"{_key_btn('T')}=TEST CLIP WARN"
     )
     pad2 = " " * max(0, W - _visible_len(bar2))
     print(f"{BG_AMBER}{FG_BLACK}{bar2}{pad2}{RESET}")
