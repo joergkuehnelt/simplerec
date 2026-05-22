@@ -137,7 +137,6 @@ What this script does
 - Continuously updates a status file called current_song.txt in the selected output folder.
 
 Controls
-- S : Stop the current segment, save it, and switch to PAUSE
 - R : Restart recording with a new segment
 - Q : Save the current segment and quit
 - Ctrl+C : Emergency stop (the current segment is still saved when possible)
@@ -1647,8 +1646,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         return f"{BG_WHITE}{FG_BLACK}{BOLD} {k} {RESET}{BG_AMBER}{FG_BLACK}"
 
     bar1 = (
-        f"  {_key_btn('S')}=STOP (pause)  "
-        f"{_key_btn('R')}=RESTART (new file)  "
+        f"  {_key_btn('R')}=RESTART (new file)  "
         f"{_key_btn('Q')}=SAVE & QUIT"
     )
     pad1 = " " * max(0, W - _visible_len(bar1))
@@ -1774,13 +1772,7 @@ def main():
                         state.session_start_wall = None
                     state.start_segment()
                 key = keys.get_key()
-                if key == "s":
-                    if state.mode in ("recording", "playlist"):
-                        saved = state.stop_and_save()
-                        if saved:
-                            print(f"\n{AMBER}Segment saved (conversion in background): {saved.name}{RESET}")
-                            time.sleep(0.5)
-                elif key == "r":
+                if key == "r":
                     if state.mode in ("recording", "playlist"):
                         saved = state.stop_and_save()
                         if saved:
