@@ -1453,8 +1453,13 @@ while true; do
   while IFS= read -r fpath; do
     [ -z "${{fpath}}" ] && continue
     count=$((count + 1))
-    fname=$(basename "${{fpath}}" .m4a)
+    # Strip extension(s) and leading dot (temp .part.wav files are hidden)
+    fname=$(basename "${{fpath}}")
+    fname="${{fname%.part.wav}}"
+    fname="${{fname%.m4a}}"
+    fname="${{fname#.}}"
     date_raw=$(echo "${{fname}}" | grep -oE '[0-9]{{8}}' | head -1)
+    # start[0-9]{4} matches first 4 time digits for both HHMM (m4a) and HHMMSS (part.wav)
     start_raw=$(echo "${{fname}}" | grep -oE 'start[0-9]{{4}}' | sed 's/start//')
     end_raw=$(echo "${{fname}}" | grep -oE 'end[0-9]{{4}}' | sed 's/end//')
     if [ -n "${{date_raw}}" ]; then
@@ -1473,7 +1478,7 @@ while true; do
       end_fmt="--:--"
     fi
     printf "${{g}}%3d  %-10s  %-5s  %-5s${{r}}\\n" "${{count}}" "${{date_fmt}}" "${{start_fmt}}" "${{end_fmt}}"
-  done < <(find "${{DIR}}" -maxdepth 2 -name "*.m4a" -not -name ".*" 2>/dev/null | sort)
+  done < <({{ find "${{DIR}}" -maxdepth 2 -name "*.m4a" -not -name ".*" 2>/dev/null; find "${{DIR}}" -maxdepth 2 -name "*.part.wav" 2>/dev/null; }} | sort)
   echo
   if [ "${{count}}" -eq 0 ]; then
     echo "${{g}}(no recordings yet)${{r}}"
@@ -1508,14 +1513,13 @@ set _script to "{as_script}"
 tell application "Terminal"
     set _tab to do script "bash " & quoted form of _script
     delay 0.8
-    tell (window of _tab)
-        set bounds to {{_lw, 0, _sw, _sh}}
-        set number of columns to 60
-        delay 0.3
-        set _wb to bounds
-        set _ww to (item 3 of _wb) - (item 1 of _wb)
-        set bounds to {{_sw - _ww, 0, _sw, _sh}}
-    end tell
+    set _win to window of _tab
+    set bounds of _win to {{_lw, 0, _sw, _sh}}
+    set number of columns of _tab to 60
+    delay 0.5
+    set _wb to bounds of _win
+    set _ww to (item 3 of _wb) - (item 1 of _wb)
+    set bounds of _win to {{_sw - _ww, 0, _sw, _sh}}
 end tell
 """
     try:
