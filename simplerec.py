@@ -298,8 +298,8 @@ def clip_history_linegraph(history: list[float], cols: int = 60) -> list[str]:
         color = row_colors[i] if i < len(row_colors) else GREEN
         if i in ref_rows:
             # Draw a dim dotted reference line in the data area (spaces → ·).
-            # The data area starts after the first │ in the line.
-            sep = line.find('│')
+            # asciichartpy uses ┤ (U+2524) or ┼ (U+253C) as axis separator.
+            sep = max(line.find('┤'), line.find('┼'))
             if sep >= 0:
                 label = line[:sep + 1]
                 data = ''.join(
