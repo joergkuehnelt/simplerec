@@ -53,9 +53,9 @@ METER_WIDTH = 38
 PEAK_HOLD_SECONDS = 1.2
 CLIP_HOLD_SECONDS = 2.0
 CLIP_THRESHOLD = 0.995
-# Level-meter warning thresholds (must match bar_color zones)
+# Level-meter warning threshold (must match bar_color zones)
 LEVEL_CLIP_DB   = -3.0   # dBFS – effectively clipping (→ red)
-LEVEL_MSG_HOLD_SECONDS = 10.0  # seconds the clipping banner stays visible
+LEVEL_CLIP_LINEAR = 0.7079  # 10**(-3/20) – linear peak threshold for banner
 AUTO_GAIN_TARGET        = 80    # % – default target when signal is weak
 AUTO_GAIN_BOOST         = 100   # % – target when signal is very weak
 AUTO_GAIN_STEP_DOWN     = 20    # % – step subtracted when clipping danger
@@ -442,7 +442,6 @@ class RecorderState:
     peak_hold_until_lr: tuple[float, float] = (0.0, 0.0)
     clip_hold_until: float = 0.0
     clip_count: int = 0
-    level_clip_until: float = 0.0    # banner: peak entered clipping zone (≥ -3 dBFS)
     gain_last_adjust: float = 0.0
     gain_weak_since: Optional[float] = None
     gain_last_action: str = ""  # for UI display
@@ -784,9 +783,6 @@ class RecorderState:
             if max(peak_lr) >= CLIP_THRESHOLD:
                 self.clip_hold_until = now + CLIP_HOLD_SECONDS
                 self.clip_count += 1
-            # Banner threshold (-3 dBFS ≈ 0.7079 linear)
-            if max(peak_lr) >= 0.7079:
-                self.level_clip_until = now + LEVEL_MSG_HOLD_SECONDS
             need_write = self.mode == "recording" and self.current_file is not None
         if need_write:
             self.writer_q.put(indata.copy())
@@ -1325,7 +1321,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         photo_enabled  = state.photo_enabled
         photo_countdown = state.photo_countdown
         gain_supported = state.gain_control_supported
-        level_clip_until = state.level_clip_until
     elapsed = state.elapsed_segment_seconds() if mode in ("recording", "playlist") else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -1452,9 +1447,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(_box_row(
         f"{AMBER}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS"
         f"   Pending: {pending_conversions}{RESET}", W))
-    # Blinking clipping banner (white on red), visible for ~10 s.
-    now_mono = time.monotonic()
-    if now_mono < level_clip_until:
+    # Blinking clipping banner (white on red), shown only while peak is clipping.
+    if max(peak_l, peak_r) >= LEVEL_CLIP_LINEAR:
         print(_box_row(
             f"{BG_RED}{FG_WHITE}{BOLD}{BLINK} ⚠ CLIPPING – REDUCE GAIN {RESET}", W))
     print(_box_bot(W))
