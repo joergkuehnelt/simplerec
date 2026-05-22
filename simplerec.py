@@ -240,8 +240,22 @@ def require_macos_tools():
         raise RuntimeError("'afconvert' was not found. Please run this in a macOS terminal.")
 
 
+_LASTDIR_FILE = Path.home() / ".simplerec_lastdir"
+
 def default_output_dir() -> Path:
+    try:
+        saved = _LASTDIR_FILE.read_text(encoding="utf-8").strip()
+        if saved:
+            return Path(saved)
+    except OSError:
+        pass
     return Path.home() / "simplerec - recordings"
+
+def _save_last_output_dir(path: Path) -> None:
+    try:
+        _LASTDIR_FILE.write_text(str(path), encoding="utf-8")
+    except OSError:
+        pass
 
 
 DEFAULT_DURATION_MINUTES = 60
@@ -315,6 +329,7 @@ def choose_output_dir() -> Path:
         if create not in ("", "y", "yes"):
             raise SystemExit("Aborted – target folder was not created.")
         outdir.mkdir(parents=True, exist_ok=True)
+    _save_last_output_dir(outdir)
     return outdir
 
 
