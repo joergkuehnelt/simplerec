@@ -53,6 +53,10 @@ METER_WIDTH = 38
 PEAK_HOLD_SECONDS = 1.2
 CLIP_HOLD_SECONDS = 2.0
 CLIP_THRESHOLD = 0.995
+# Level-meter warning thresholds (must match bar_color zones)
+LEVEL_DANGER_DB = -6.0   # dBFS – entering clipping danger zone (→ light red)
+LEVEL_CLIP_DB   = -3.0   # dBFS – effectively clipping (→ red)
+LEVEL_MSG_HOLD_SECONDS = 10.0  # seconds a danger/clip banner stays visible
 AUTO_GAIN_TARGET        = 80    # % – default target when signal is weak
 AUTO_GAIN_BOOST         = 100   # % – target when signal is very weak
 AUTO_GAIN_STEP_DOWN     = 20    # % – step subtracted when clipping danger
@@ -437,6 +441,8 @@ class RecorderState:
     peak_hold_until_lr: tuple[float, float] = (0.0, 0.0)
     clip_hold_until: float = 0.0
     clip_count: int = 0
+    level_danger_until: float = 0.0  # banner: peak entered danger zone (≥ -6 dBFS)
+    level_clip_until: float = 0.0    # banner: peak entered clipping zone (≥ -3 dBFS)
     gain_last_adjust: float = 0.0
     gain_weak_since: Optional[float] = None
     gain_last_action: str = ""  # for UI display
@@ -778,6 +784,12 @@ class RecorderState:
             if max(peak_lr) >= CLIP_THRESHOLD:
                 self.clip_hold_until = now + CLIP_HOLD_SECONDS
                 self.clip_count += 1
+            # Banner thresholds (dBFS → linear): -3 dBFS ≈ 0.7079, -6 dBFS ≈ 0.5012
+            mx_peak = max(peak_lr)
+            if mx_peak >= 0.7079:
+                self.level_clip_until = now + LEVEL_MSG_HOLD_SECONDS
+            elif mx_peak >= 0.5012:
+                self.level_danger_until = now + LEVEL_MSG_HOLD_SECONDS
             need_write = self.mode == "recording" and self.current_file is not None
         if need_write:
             self.writer_q.put(indata.copy())
@@ -1316,6 +1328,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         photo_enabled  = state.photo_enabled
         photo_countdown = state.photo_countdown
         gain_supported = state.gain_control_supported
+        level_clip_until = state.level_clip_until
+        level_danger_until = state.level_danger_until
     elapsed = state.elapsed_segment_seconds() if mode in ("recording", "playlist") else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -1442,6 +1456,14 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(_box_row(
         f"{AMBER}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS"
         f"   Pending: {pending_conversions}{RESET}", W))
+    # Blinking banner (clip takes precedence over danger), visible for ~10 s.
+    now_mono = time.monotonic()
+    if now_mono < level_clip_until:
+        print(_box_row(
+            f"{RED}{BOLD}{BLINK}⚠ CLIPPING – REDUCE GAIN{RESET}", W))
+    elif now_mono < level_danger_until:
+        print(_box_row(
+            f"{RED_BRIGHT}{BOLD}{BLINK}⚠ CLIPPING DANGER – WATCH GAIN{RESET}", W))
     print(_box_bot(W))
     print()
 
