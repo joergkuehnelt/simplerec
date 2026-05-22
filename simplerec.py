@@ -302,9 +302,11 @@ def clip_history_linegraph(history: list[float], cols: int = 60) -> list[str]:
             sep = max(line.find('┤'), line.find('┼'))
             if sep >= 0:
                 label = line[:sep + 1]
+                # asciichartpy omits trailing spaces on empty rows → pad to cols.
+                data_raw = line[sep + 1:].ljust(cols)
                 data = ''.join(
                     f"{DIM}{GREY}·{RESET}{color}" if c == ' ' else c
-                    for c in line[sep + 1:]
+                    for c in data_raw
                 )
                 out.append(f"{color}{label}{data}{RESET}")
                 continue
