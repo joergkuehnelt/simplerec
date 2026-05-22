@@ -1420,7 +1420,7 @@ tell application "Finder"
 end tell
 set _dir to "{as_path}"
 tell application "Terminal"
-    do script "while true; do clear; ls -la " & quoted form of _dir & "; sleep 600; done"
+    do script "while true; do clear; echo " & quoted form of _dir & "; echo; date '+Refreshed: %H:%M:%S'; echo; ls -lht " & quoted form of _dir & " | awk 'NR>1{{n=$9;for(i=10;i<=NF;i++)n=n FS $i;print $5,$6,$7,$8,n}}' | column -t; sleep 600; done"
     delay 0.8
     set bounds of front window to {{_lw, 0, _sw, _sh}}
     set number of columns of front window to 60
