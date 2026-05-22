@@ -19,6 +19,7 @@ macOS built-ins used: afconvert, afinfo
 
 from __future__ import annotations
 
+import errno
 import math
 import os
 import subprocess
@@ -393,9 +394,10 @@ def _open_in_audacity(m4a: Path, labels_path: Path | None) -> None:
 
     # ── Send NewLabelTrack + ImportLabels commands ────────────────────────
     def _send_cmd(cmd: str) -> str:
-        """Send one command, return response (blocks until \0 received)."""
+        """Send one command via non-blocking write; return response or '' on timeout."""
         resp: list[str] = []
 
+        # Start reader thread first (pipe_from stays open on Audacity's side)
         def _r() -> None:
             try:
                 with open(pipe_from, "r") as fh:
@@ -411,12 +413,29 @@ def _open_in_audacity(m4a: Path, labels_path: Path | None) -> None:
 
         t = threading.Thread(target=_r, daemon=True)
         t.start()
+
+        # Non-blocking write: retry until Audacity is ready to read
+        write_deadline = time.monotonic() + 10.0
+        fd = -1
+        while time.monotonic() < write_deadline:
+            try:
+                fd = os.open(str(pipe_to), os.O_WRONLY | os.O_NONBLOCK)
+                break
+            except OSError as e:
+                if e.errno in (errno.ENXIO, errno.ENOENT):
+                    time.sleep(0.3)
+                else:
+                    t.join(timeout=1.0)
+                    return ""
+        if fd == -1:
+            t.join(timeout=1.0)
+            return ""
         try:
-            with open(pipe_to, "w") as fh:
-                fh.write(cmd + "\n")
-        except OSError:
-            pass
-        t.join(timeout=6.0)
+            os.write(fd, (cmd + "\n").encode())
+        finally:
+            os.close(fd)
+
+        t.join(timeout=8.0)
         return resp[0] if resp else ""
 
     try:
