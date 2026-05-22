@@ -32,12 +32,16 @@ read -r _x
 rm -f "$RUNNER"
 RUNNER_EOF
     chmod +x "$RUNNER"
-    # Use single-command form: avoids "window" being parsed as a class name.
+    # "using terms from" forces the AppleScript compiler to use iTerm2's own
+    # dictionary, preventing 'window' from being parsed as a Standard Suite
+    # class name rather than iTerm2's 'create window' command keyword.
     if osascript <<APPLESCRIPT
-tell application "iTerm2"
-    activate
-    create window with default profile command "bash $RUNNER"
-end tell
+using terms from application "iTerm2"
+    tell application "iTerm2"
+        activate
+        create window with default profile command "bash $RUNNER"
+    end tell
+end using terms from
 APPLESCRIPT
     then
         exit 0  # iTerm2 launched — Terminal closes this window on clean exit
