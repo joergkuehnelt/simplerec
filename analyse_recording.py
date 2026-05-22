@@ -408,6 +408,14 @@ tell application "Audacity" to activate
 delay 0.5
 tell application "System Events"
     tell process "Audacity"
+        -- Poll until the menu bar is ready (Audacity still loading audio)
+        set waited to 0
+        repeat while waited < 30
+            if exists menu bar item "File" of menu bar 1 then exit repeat
+            delay 0.5
+            set waited to waited + 1
+        end repeat
+        delay 0.3
         click menu item "Labels\u2026" of menu 1 of ¬
             menu item "Import" of menu "File" of menu bar item "File" of menu bar 1
         delay 0.8
