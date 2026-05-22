@@ -442,6 +442,7 @@ class RecorderState:
     peak_hold_until_lr: tuple[float, float] = (0.0, 0.0)
     clip_hold_until: float = 0.0
     clip_count: int = 0
+    simulate_clip_until: float = 0.0  # [T] key – force clipping banner for a few seconds (test)
     gain_last_adjust: float = 0.0
     gain_weak_since: Optional[float] = None
     gain_last_action: str = ""  # for UI display
@@ -1321,6 +1322,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         photo_enabled  = state.photo_enabled
         photo_countdown = state.photo_countdown
         gain_supported = state.gain_control_supported
+        simulate_clip_active = time.monotonic() < state.simulate_clip_until
     elapsed = state.elapsed_segment_seconds() if mode in ("recording", "playlist") else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -1448,7 +1450,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         f"{AMBER}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS"
         f"   Pending: {pending_conversions}{RESET}", W))
     # Blinking clipping banner (white on red), shown only while peak is clipping.
-    if max(peak_l, peak_r) >= LEVEL_CLIP_LINEAR:
+    if max(peak_l, peak_r) >= LEVEL_CLIP_LINEAR or simulate_clip_active:
         print(_box_row(
             f"{BG_RED}{FG_WHITE}{BOLD}{BLINK} ⚠ CLIPPING – REDUCE GAIN {RESET}", W))
     print(_box_bot(W))
@@ -1637,6 +1639,10 @@ def main():
                 elif key in ("0", "2", "4", "6", "8") and not state.auto_gain_enabled:
                     pct = {"0": 100, "2": 20, "4": 40, "6": 60, "8": 80}[key]
                     state.manual_set_gain(pct)
+                elif key == "t":
+                    # Simulate clipping for 3s so the banner styling can be tested without signal.
+                    with state.lock:
+                        state.simulate_clip_until = time.monotonic() + 3.0
                 elif key == "u":
                     # Save current segment, then launch the updater script
                     if state.mode in ("recording", "playlist"):
