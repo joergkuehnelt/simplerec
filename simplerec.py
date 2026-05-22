@@ -1475,6 +1475,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         gain_supported = state.gain_control_supported
         simulate_clip_active = time.monotonic() < state.simulate_clip_until
         clip_history_snapshot = list(state.clip_history)
+        current_temp_name = state.current_temp_name
     elapsed = state.elapsed_segment_seconds() if mode in ("recording", "playlist") else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -1534,12 +1535,22 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
             print(_box_row(
                 f"{RED}{BOLD}{BLINK}⚠ CLIPPING! Reduce level at SOURCE (mixer/pad).{RESET}"
                 f"{RED}{BOLD}  (Events: {clip_count}){RESET}", W))
-    # DJ picture status
+    # DJ picture status + file activity indicator
     if photo_enabled:
         dj_status = f"{GREEN}{BOLD}ON{RESET}"
     else:
         dj_status = f"{DIM}OFF{RESET}"
-    print(_box_row(f"{AMBER}DJ PIC : {dj_status}{RESET}", W))
+    fa_str = ""
+    if mode == "recording" and current_temp_name is not None:
+        try:
+            mtime = current_temp_name.stat().st_mtime
+            if time.time() - mtime < 60:
+                fa_str = f"   {AMBER}File activity: {GREEN}{BOLD}ok{RESET}"
+            else:
+                fa_str = f"   {AMBER}File activity: {RED}{BOLD}check status{RESET}"
+        except OSError:
+            fa_str = f"   {AMBER}File activity: {RED}{BOLD}check status{RESET}"
+    print(_box_row(f"{AMBER}DJ PIC : {dj_status}{fa_str}{RESET}", W))
     if photo_countdown is not None:
         s = "s" if photo_countdown != 1 else ""
         smile_msg = f"{RED}{BLINK}{BOLD}  \U0001f4f7 SMILE IN {photo_countdown} second{s}!{RESET}"
