@@ -233,6 +233,36 @@ def _get_input_gain() -> Optional[int]:
         return None
 
 
+def _probe_gain_control() -> bool:
+    """Detect whether the currently selected macOS input device actually responds
+    to the system input-gain slider. Some class-compliant USB interfaces
+    (e.g. Behringer UCA202) have a fixed line-level input with no software
+    gain control — every set call is a no-op. We probe by writing two distinct
+    values and checking whether the read-back follows; the original value is
+    restored afterwards.
+
+    Returns True only if both probes were reflected by the OS, False otherwise.
+    """
+    orig = _get_input_gain()
+    if orig is None:
+        return False
+    # Pick two probe values that are distinct from `orig` and from each other.
+    candidates = [v for v in (40, 70) if abs(v - orig) >= 10]
+    if len(candidates) < 2:
+        candidates = [30, 80]
+    ok = True
+    for v in candidates:
+        _set_input_gain(v)
+        time.sleep(0.12)  # give CoreAudio a moment to apply
+        read_back = _get_input_gain()
+        if read_back is None or abs(read_back - v) > 2:
+            ok = False
+            break
+    # Restore original setting regardless of result.
+    _set_input_gain(orig)
+    return ok
+
+
 def require_macos_tools():
     if sys.platform != "darwin":
         raise RuntimeError("This version is intended for macOS (sys.platform != 'darwin').")
@@ -406,6 +436,7 @@ class RecorderState:
     gain_last_action: str = ""  # for UI display
     gain_last_action_at: float = 0.0  # monotonic time of last action message
     auto_gain_enabled: bool = True  # toggle via [A]
+    gain_control_supported: bool = True  # False for devices like UCA202 (fixed line-in)
     gain_history: deque = field(default_factory=lambda: deque(maxlen=GAIN_HISTORY_MAX))
     gain_current_pct: Optional[int] = None
     gain_last_poll: float = 0.0
@@ -786,6 +817,8 @@ class RecorderState:
 
     def manual_set_gain(self, pct: int) -> None:
         """Manually set input gain (when autogain is disabled)."""
+        if not self.gain_control_supported:
+            return
         now = time.monotonic()
         msg = f"manual → {pct}%"
         self._apply_gain(now, pct, msg)
@@ -795,22 +828,29 @@ class RecorderState:
         """Reset input gain to AUTO_GAIN_TARGET (80%) on every (re)start of a
         segment so monitoring begins from a known baseline. Also clears the
         weak-signal timer and the autogain cooldown so the algorithm can react
-        immediately to the new segment's signal level."""
+        immediately to the new segment's signal level.
+
+        On devices that don't honour software gain (e.g. UCA202) the OS call
+        is skipped and a marker line is written to the playlist instead."""
         now = time.monotonic()
-        _set_input_gain(AUTO_GAIN_TARGET)
-        self.gain_current_pct = AUTO_GAIN_TARGET
+        if self.gain_control_supported:
+            _set_input_gain(AUTO_GAIN_TARGET)
+            self.gain_current_pct = AUTO_GAIN_TARGET
+            msg = f"reset → {AUTO_GAIN_TARGET}% (segment start)"
+        else:
+            msg = "reset skipped (device has no software gain)"
         self.gain_weak_since = None
         self.gain_last_adjust = 0.0
-        msg = f"reset → {AUTO_GAIN_TARGET}% (segment start)"
         with self.lock:
             self.gain_last_action = msg
             self.gain_last_action_at = now
-            self.gain_history.append((now, AUTO_GAIN_TARGET))
+            if self.gain_control_supported:
+                self.gain_history.append((now, AUTO_GAIN_TARGET))
         self.append_gain_event_to_playlist(msg)
 
     def check_auto_gain(self) -> None:
         """Raise or lower macOS input gain depending on signal level."""
-        if not self.auto_gain_enabled:
+        if not self.auto_gain_enabled or not self.gain_control_supported:
             return
         now = time.monotonic()
         if now - self.gain_last_adjust < AUTO_GAIN_COOLDOWN:
@@ -1269,6 +1309,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         session_start_mono = state.session_start_monotonic
         photo_enabled  = state.photo_enabled
         photo_countdown = state.photo_countdown
+        gain_supported = state.gain_control_supported
     elapsed = state.elapsed_segment_seconds() if mode in ("recording", "playlist") else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -1341,12 +1382,20 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         s = "s" if photo_countdown != 1 else ""
         smile_msg = f"{RED}{BLINK}{BOLD}  \U0001f4f7 SMILE IN {photo_countdown} second{s}!{RESET}"
         print(_box_row(smile_msg, W))
+    if not gain_supported:
+        print(_box_row(
+            f"{YELLOW}{BOLD}⚠ Device has no software gain control – adjust level at source.{RESET}", W))
     print(_box_bot(W))
     print()
 
     # ── Box · Auto-gain history ─────────────────────────────────────────────
     cur_txt = f"  (now: {gain_current}%)" if gain_current is not None else ""
-    mode_tag = f"{GREEN}[AUTO]{RESET}" if auto_gain_on else f"{YELLOW}[MANUAL]{RESET}"
+    if not gain_supported:
+        mode_tag = f"{YELLOW}[N/A]{RESET}"
+    elif auto_gain_on:
+        mode_tag = f"{GREEN}[AUTO]{RESET}"
+    else:
+        mode_tag = f"{YELLOW}[MANUAL]{RESET}"
     recent_adjust = (
         gain_action != ""
         and gain_action_at > 0.0
@@ -1423,6 +1472,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
 
     if auto_gain_on:
         bar3 = f"  {_key_btn('A')}=AUTOGAIN: ON   (press [A] to switch off and set manually)"
+    elif not gain_supported:
+        bar3 = f"  {_key_btn('A')}=AUTOGAIN: N/A  (device has no software gain – adjust at source)"
     else:
         bar3 = (
             f"  {_key_btn('A')}=AUTOGAIN: OFF  "
@@ -1476,10 +1527,26 @@ def main():
         state.start_writer()
         state.start_converter()
         state.start_stream()
-        _set_input_gain(AUTO_GAIN_TARGET)
-        state.gain_current_pct = AUTO_GAIN_TARGET
-        with state.lock:
-            state.gain_history.append((time.monotonic(), AUTO_GAIN_TARGET))
+        # Probe whether this device actually honours the macOS input-gain slider
+        # (class-compliant interfaces like Behringer UCA202 have a fixed line-in).
+        print("Probing input-gain control …")
+        gain_ok = _probe_gain_control()
+        state.gain_control_supported = gain_ok
+        if gain_ok:
+            _set_input_gain(AUTO_GAIN_TARGET)
+            state.gain_current_pct = AUTO_GAIN_TARGET
+            with state.lock:
+                state.gain_history.append((time.monotonic(), AUTO_GAIN_TARGET))
+        else:
+            state.auto_gain_enabled = False  # nothing the algorithm could do
+            state.gain_current_pct = None
+            print(
+                f"{YELLOW}Note: this device does not respond to the macOS"
+                f" input-gain slider.{RESET}\n"
+                f"{YELLOW}      Autogain has been disabled. Adjust the level"
+                f" at the source (mixer / pad).{RESET}"
+            )
+            time.sleep(1.5)
         state.start_songrec()
         state.start_photo()
         preview_end = time.monotonic() + PREVIEW_SECONDS
