@@ -63,14 +63,18 @@ def _human_size(nbytes: int) -> str:
     return f"{nbytes:.1f} TB"
 
 
-def _get_last_dir() -> Path | None:
+_DEFAULT_OUTPUT_DIR = Path.home() / "simplerec - recordings"
+
+
+def _get_last_dir() -> Path:
+    """Return the last-used recording folder, or the default if not set."""
     try:
         saved = _LASTDIR_FILE.read_text(encoding="utf-8").strip()
         if saved:
             return Path(saved)
     except OSError:
         pass
-    return None
+    return _DEFAULT_OUTPUT_DIR
 
 
 def _list_session_folders(base: Path) -> list[Path]:
@@ -255,11 +259,8 @@ def _print_playlist(folder: Path) -> None:
 def main() -> None:
     # ── Step 1: resolve base folder ─────────────────────────────────────────
     base = _get_last_dir()
-    if base is None or not base.exists():
-        if base:
-            print(f"{YELLOW}Last folder not found: {base}{RESET}")
-        else:
-            print(f"{YELLOW}~/.simplerec_lastdir not found.{RESET}")
+    if not base.exists():
+        print(f"{YELLOW}Folder not found: {base}{RESET}")
         raw = input("Enter recording output folder path: ").strip()
         if not raw:
             sys.exit(1)
