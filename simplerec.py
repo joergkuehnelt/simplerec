@@ -49,7 +49,7 @@ PREVIEW_SECONDS = 5
 SEGMENT_SECONDS = 60 * 60
 DEVICE_PROBE_SECONDS = 0.18
 UI_REFRESH_SECONDS = 0.08
-METER_WIDTH = 38
+METER_WIDTH = 60
 PEAK_HOLD_SECONDS = 1.2
 CLIP_HOLD_SECONDS = 2.0
 CLIP_THRESHOLD = 0.995
@@ -1441,11 +1441,9 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     # ── Box 2 · Level Meter ─────────────────────────────────────────────────
     print(_box_top(W))
     print(_box_row(
-        f"{AMBER}L: {AMBER}[{colored_meter(db_l, hold_l)}{AMBER}] {db_l:6.1f} dBFS"
-        f"   peak={peak_l:.3f}{RESET}", W))
+        f"{AMBER}{BOLD}L {db_l:6.1f} dBFS {AMBER}[{colored_meter(db_l, hold_l)}{AMBER}]{RESET}", W))
     print(_box_row(
-        f"{AMBER}R: {AMBER}[{colored_meter(db_r, hold_r)}{AMBER}] {db_r:6.1f} dBFS"
-        f"   peak={peak_r:.3f}{RESET}", W))
+        f"{AMBER}{BOLD}R {db_r:6.1f} dBFS {AMBER}[{colored_meter(db_r, hold_r)}{AMBER}]{RESET}", W))
     print(_box_row(
         f"{AMBER}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS"
         f"   Pending: {pending_conversions}{RESET}", W))
