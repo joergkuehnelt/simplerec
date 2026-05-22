@@ -40,6 +40,11 @@ try:
 except ImportError:
     _psutil = None  # type: ignore
 
+try:
+    import asciichartpy as _acp
+except ImportError:
+    _acp = None
+
 VERSION = "0.1"
 
 SAMPLE_RATE_FALLBACK = 48000
@@ -261,6 +266,35 @@ def clip_history_peakline(history: list[float], cols: int = 60) -> list[str]:
             else:
                 marks.append(" ")
         out.append(f"{DIM}{AMBER}{lbl} │{RESET}{''.join(marks)}")
+    return out
+
+
+def clip_history_linegraph(history: list[float], cols: int = 60) -> list[str]:
+    """Like clip_history_peakline but uses asciichartpy for smooth ╭╮╰╯│─ curves.
+
+    Falls back to clip_history_peakline when asciichartpy is not installed.
+    10 rows at 3 dB steps (0 / -3 / … / -27 dBFS), per-row colours identical
+    to the original dot grid.  Prefix width and data width unchanged.
+    """
+    if _acp is None:
+        return clip_history_peakline(history, cols)
+    cells = list(history)[-cols:]
+    if len(cells) < cols:
+        cells = [-120.0] * (cols - len(cells)) + cells
+    display = [max(-27.0, min(0.0, v)) for v in cells]
+    chart_str = _acp.plot(display, {
+        'height': 9,
+        'min': -27.0,
+        'max': 0.0,
+        'format': '{:7.0f} ',
+    })
+    # Row colours matching the original 10-band grid (top → bottom):
+    # 0 dBFS = RED, -3 = RED_BRIGHT, -6…-15 = AMBER, -18…-27 = GREEN
+    row_colors = [RED, RED_BRIGHT, AMBER, AMBER, AMBER, AMBER, GREEN, GREEN, GREEN, GREEN]
+    out: list[str] = []
+    for i, line in enumerate(chart_str.splitlines()):
+        color = row_colors[i] if i < len(row_colors) else GREEN
+        out.append(f"{color}{line}{RESET}")
     return out
 
 
@@ -1501,7 +1535,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(_box_row(f"{DIM}{AMBER}              {''.join(_ruler)} {RESET}", W))
     # Visual separator between VU meter and 30s peak history
     print(f"{AMBER}╟{'─' * (W - 2)}╢{RESET}")
-    for _row in clip_history_peakline(clip_history_snapshot, cols=60):
+    for _row in clip_history_linegraph(clip_history_snapshot, cols=60):
         print(_box_row(_row, W))
     # Baseline with 5-second tick marks (every 10 cols = 5 s at 0.5 s/col).
     _ticks = "".join(

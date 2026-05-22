@@ -29,7 +29,7 @@ echo "  What this installer does:"
 echo "    1. Installs Homebrew  (macOS package manager)"
 echo "    2. Installs Python 3"
 echo "    3. Installs Python packages:"
-echo "         sounddevice · soundfile · numpy · shazamio · psutil"
+echo "         sounddevice · soundfile · numpy · shazamio · psutil · asciichartpy"
 echo "    4. Installs imagesnap  (DJ webcam photos: first after 5 min, then every 15 min — optional)"
 echo "    5. Creates  [Start simplerec.command]"
 echo "       → just double-click that file to record"
@@ -111,7 +111,7 @@ echo "  · shazamio     — song recognition via Shazam (optional)"
 echo "  · psutil       — CPU/RAM display in the UI (optional)"
 echo
 "$PY" -m pip install --upgrade pip --quiet
-"$PY" -m pip install sounddevice soundfile numpy shazamio psutil --upgrade --quiet
+"$PY" -m pip install sounddevice soundfile numpy shazamio psutil asciichartpy --upgrade --quiet
 success "Python packages installed."
 
 # ── Verify required Python scripts ──────────────────────────────────────────
