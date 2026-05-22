@@ -297,7 +297,7 @@ def clip_history_linegraph(history: list[float], cols: int = 60) -> list[str]:
     for i, line in enumerate(chart_str.splitlines()):
         color = row_colors[i] if i < len(row_colors) else GREEN
         if i in ref_rows:
-            # Draw a dim dotted reference line in the data area (spaces → ·).
+            # Draw a dim dashed reference line in the data area (spaces → ─).
             # asciichartpy uses ┤ (U+2524) or ┼ (U+253C) as axis separator.
             sep = max(line.find('┤'), line.find('┼'))
             if sep >= 0:
@@ -305,7 +305,7 @@ def clip_history_linegraph(history: list[float], cols: int = 60) -> list[str]:
                 # asciichartpy omits trailing spaces on empty rows → pad to cols.
                 data_raw = line[sep + 1:].ljust(cols)
                 data = ''.join(
-                    f"{DIM}{GREY}·{RESET}{color}" if c == ' ' else c
+                    f"{DIM}{AMBER}─{RESET}" if c == ' ' else c
                     for c in data_raw
                 )
                 out.append(f"{color}{label}{data}{RESET}")
