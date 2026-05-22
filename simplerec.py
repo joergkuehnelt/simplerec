@@ -963,6 +963,56 @@ class RecorderState:
         except OSError:
             pass
 
+    @staticmethod
+    def _write_audacity_labels(playlist_path: Path) -> Optional[Path]:
+        """Read a finalized playlist .txt and write an Audacity point-label track
+        next to it ("<basename>.audacity.txt"). Returns the path written, or None.
+
+        Audacity label-track format is tab-separated: ``start\tend\tlabel``.
+        Point labels have start == end. Times are seconds from segment start
+        (the 'elapsed' HH:MM:SS column in the playlist).
+        """
+        if playlist_path is None or not playlist_path.exists():
+            return None
+        try:
+            text = playlist_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        labels: list[str] = []
+        for ln in text.splitlines():
+            ln = ln.strip()
+            if not ln:
+                continue
+            parts = ln.split(";")
+            if len(parts) < 4:
+                continue
+            elapsed = parts[1].strip()
+            try:
+                hh, mm, ss = elapsed.split(":")
+                secs = int(hh) * 3600 + int(mm) * 60 + int(ss)
+            except (ValueError, AttributeError):
+                continue
+            artist = parts[2].strip()
+            title = parts[3].strip()
+            if artist == "CLIP-ADJUST":
+                label = f"CLIP-ADJUST: {title}" if title else "CLIP-ADJUST"
+            elif artist and title:
+                label = f"{artist} - {title}"
+            elif artist or title:
+                label = artist or title
+            else:
+                continue  # no-match row
+            # Audacity reads label text verbatim until newline; strip tabs/newlines.
+            label = label.replace("\t", " ").replace("\n", " ").replace("\r", " ")
+            labels.append(f"{secs:.6f}\t{secs:.6f}\t{label}")
+        out_path = playlist_path.with_suffix(".audacity.txt")
+        try:
+            # Always write the file (even if empty) so the folder is consistent.
+            out_path.write_text(("\n".join(labels) + "\n") if labels else "", encoding="utf-8")
+            return out_path
+        except OSError:
+            return None
+
     def stop_and_save(self) -> Optional[Path]:
         playlist_branch = False
         start_wall_pb: Optional[dt.datetime] = None
@@ -998,7 +1048,8 @@ class RecorderState:
                 try:
                     playlist_temp_pb.rename(playlist_final)
                 except OSError:
-                    pass
+                    playlist_final = playlist_temp_pb
+                self._write_audacity_labels(playlist_final)
             with self.lock:
                 self.segment_dir = None
             self._remove_song_status_file()
@@ -1034,7 +1085,8 @@ class RecorderState:
             try:
                 playlist_temp.rename(playlist_final)
             except OSError:
-                pass
+                playlist_final = playlist_temp
+            self._write_audacity_labels(playlist_final)
         self.convert_q.put((tmp_name, final_name))
         self._remove_song_status_file()
         return final_name
