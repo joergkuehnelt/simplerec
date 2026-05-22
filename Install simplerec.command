@@ -118,9 +118,6 @@ success "Python packages installed."
 if [[ ! -f "$SCRIPT_DIR/simplerec.py" ]]; then
     error "simplerec.py not found in $SCRIPT_DIR — please run this installer from the project folder."
 fi
-if [[ ! -f "$SCRIPT_DIR/analyse_recording.py" ]]; then
-    error "analyse_recording.py not found in $SCRIPT_DIR — please run this installer from the project folder."
-fi
 
 # ── Create [Start simplerec.command] ─────────────────────────────────────────
 echo
@@ -158,46 +155,10 @@ STARTSCRIPT
 chmod +x "$START"
 success "Start file created."
 
-# ── Create [Analyse recording.command] ───────────────────────────────────────
-echo
-info "Creating analyse file …"
-
-ANALYSE="$SCRIPT_DIR/Analyse recording.command"
-
-cat > "$ANALYSE" << 'ANALYSESCRIPT'
-#!/usr/bin/env bash
-# simplerec — Analyse a recording (double-click in Finder to launch)
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Ensure Homebrew Python is on PATH
-if [[ "$(uname -m)" == "arm64" ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)" 2>/dev/null || true
-else
-    eval "$(/usr/local/bin/brew shellenv)" 2>/dev/null || true
-fi
-
-cd "$SCRIPT_DIR"
-
-if [[ ! -f "analyse_recording.py" ]]; then
-    echo "Error: analyse_recording.py not found in $SCRIPT_DIR"
-    read -r -p "Press ENTER to close …"
-    exit 1
-fi
-
-python3 analyse_recording.py "$@"
-
-echo
-read -r -p "Press ENTER to close …"
-ANALYSESCRIPT
-
-chmod +x "$ANALYSE"
-success "Analyse file created."
 
 # ── Remove quarantine flags ───────────────────────────────────────────────────
-xattr -d com.apple.quarantine "$START"   2>/dev/null || true
-xattr -d com.apple.quarantine "$ANALYSE" 2>/dev/null || true
-xattr -d com.apple.quarantine "$0"       2>/dev/null || true
+xattr -d com.apple.quarantine "$START" 2>/dev/null || true
+xattr -d com.apple.quarantine "$0"     2>/dev/null || true
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo
@@ -205,14 +166,12 @@ echo -e "${GREEN}${BOLD}  ══════════════════
 echo -e "${GREEN}${BOLD}   Installation complete!${RESET}"
 echo -e "${GREEN}${BOLD}  ════════════════════════════════════════════${RESET}"
 echo
-echo "  → Double-click  [Start simplerec.command]    to record."
-echo "  → Double-click  [Analyse recording.command]  to analyse a recording."
+echo "  → Double-click  [Start simplerec.command]  to record."
 echo
 echo "  Features:"
 echo "    · Stereo M4A recording  ·  Auto-gain  ·  Shazam song recognition"
 echo "    · Webcam DJ photos: first after 5 min, then every 15 min  ·  Auto-update [U]"
 echo "    · Each segment saved in its own YYYYMMDD-HHMM subfolder"
-echo "    · Post-session analysis: peak, RMS, clipping, loudness map, playlist"
 echo
 echo "  If macOS blocks the file the first time:"
 echo "    System Settings → Privacy & Security → Open Anyway"
