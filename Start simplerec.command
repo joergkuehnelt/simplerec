@@ -32,13 +32,11 @@ read -r _x
 rm -f "$RUNNER"
 RUNNER_EOF
     chmod +x "$RUNNER"
+    # Use single-command form: avoids "window" being parsed as a class name.
     if osascript <<APPLESCRIPT
 tell application "iTerm2"
     activate
-    set newWin to (create window with default profile)
-    tell current session of newWin
-        write text "bash $RUNNER"
-    end tell
+    create window with default profile command "bash $RUNNER"
 end tell
 APPLESCRIPT
     then
