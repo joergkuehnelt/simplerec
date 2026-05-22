@@ -722,10 +722,12 @@ class RecorderState:
             peak_lr = (float(peak[0]), float(peak[1]))
         now = time.monotonic()
         db_lr = (linear_to_dbfs(rms_lr[0]), linear_to_dbfs(rms_lr[1]))
+        # Make copies OUTSIDE the lock to minimise lock-hold time in the audio thread.
+        arr_copy = arr.copy()
         with self.lock:
             self.latest_rms_lr = rms_lr
             self.latest_peak_lr = peak_lr
-            self.recent_blocks.append(arr.copy())
+            self.recent_blocks.append(arr_copy)
             hold_db = list(self.peak_hold_db_lr)
             hold_until = list(self.peak_hold_until_lr)
             for i in range(2):
@@ -739,8 +741,9 @@ class RecorderState:
             if max(peak_lr) >= CLIP_THRESHOLD:
                 self.clip_hold_until = now + CLIP_HOLD_SECONDS
                 self.clip_count += 1
-            if self.mode == "recording" and self.current_file is not None:
-                self.writer_q.put(indata.copy())
+            need_write = self.mode == "recording" and self.current_file is not None
+        if need_write:
+            self.writer_q.put(indata.copy())
 
     def poll_gain(self) -> None:
         """Read current macOS input gain every GAIN_POLL_SECONDS and append to history."""
@@ -1194,8 +1197,16 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     ch_label = "Stereo" if channels >= 2 else "Mono"
     sys_txt = ""
     if _psutil is not None:
-        cpu_pct = _psutil.cpu_percent()
-        ram_pct = _psutil.virtual_memory().percent
+        # Cache CPU/RAM readings for ~1s so the UI (12 fps) doesn't poll psutil
+        # on every frame; cpu_percent() without interval also gets noisy that fast.
+        now_mono = time.monotonic()
+        cache = getattr(render_ui, "_sys_cache", None)
+        if cache is None or now_mono - cache[0] > 1.0:
+            cpu_pct = _psutil.cpu_percent()
+            ram_pct = _psutil.virtual_memory().percent
+            render_ui._sys_cache = (now_mono, cpu_pct, ram_pct)
+        else:
+            _, cpu_pct, ram_pct = cache
         sys_txt = f"    CPU:{cpu_pct:5.1f}%  RAM:{ram_pct:5.1f}%"
     # remaining time countdown (red)
     if max_record_seconds is not None and session_start_mono is not None:
@@ -1473,8 +1484,7 @@ def main():
                     updater = Path(__file__).parent / "Update simplerec.command"
                     if updater.exists():
                         print(f"\nLaunching updater …")
-                        import subprocess as _sp
-                        _sp.Popen(["open", str(updater)])
+                        subprocess.Popen(["open", str(updater)])
                     else:
                         print(f"\n{AMBER}Update simplerec.command not found — please download manually.{RESET}")
                     break
@@ -1489,7 +1499,6 @@ def main():
                 time.sleep(UI_REFRESH_SECONDS)
                 state.check_auto_gain()
                 state.poll_gain()
-        print("\nAborted by user.")
         if state.mode in ("recording", "playlist"):
             saved = state.stop_and_save()
             if saved:
