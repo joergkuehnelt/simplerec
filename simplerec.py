@@ -1491,6 +1491,8 @@ while true; do
       last_dir=$(dirname "${{last_fpath}}")
       if find "${{last_dir}}" -maxdepth 1 -mmin -2 2>/dev/null | grep -q .; then
         echo "${{h}}  ● Session ${{count}} is writing a file${{r}}"
+      else
+        echo "${{h}}  ⚠ Check recording status of session ${{count}}${{r}}"
       fi
     fi
   fi
