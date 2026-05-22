@@ -1417,31 +1417,11 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
 
 
 def _position_terminal_left() -> None:
-    """Enter fullscreen mode in iTerm2 (if installed) or Terminal (best-effort)."""
+    """Enter fullscreen mode in the current terminal window (best-effort)."""
     script = '''
-set usingITerm to false
-try
-    tell application "Finder"
-        if exists application file id "com.googlecode.iterm2" then
-            set usingITerm to true
-        end if
-    end tell
-end try
-if usingITerm then
-    tell application "iTerm2"
-        activate
-        tell application "System Events"
-            keystroke "f" using {command down, control down}
-        end tell
-    end tell
-else
-    tell application "Terminal"
-        activate
-        tell application "System Events"
-            keystroke "f" using {command down, control down}
-        end tell
-    end tell
-end if
+tell application "System Events"
+    keystroke "f" using {command down, control down}
+end tell
 '''
     try:
         subprocess.run(
