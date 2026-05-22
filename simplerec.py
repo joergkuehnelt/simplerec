@@ -1420,8 +1420,9 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
 def _open_dir_window(output_dir: Path) -> None:
     """Open a second Terminal window on the right half of the screen.
 
-    Writes a temp watch script with tput colors, then opens it in Terminal.
-    Called once when recording begins. Positioned right half, 60 columns.
+    Writes a temp watch script that displays a numbered session list with
+    parsed Date / Start / End columns from m4a filenames. Called once when
+    recording begins. Positioned flush to the right edge, 60 columns.
     """
     # Escape the output path for embedding in a bash single-quoted string.
     bash_path = str(output_dir).replace("'", "'\\''")
@@ -1433,17 +1434,52 @@ while true; do
   clear
   h=$(tput setaf 3 2>/dev/null)
   g=$(tput setaf 2 2>/dev/null)
+  b=$(tput bold 2>/dev/null)
   r=$(tput sgr0 2>/dev/null)
   echo "${{h}}${{DIR}}${{r}}"
   echo
   echo "${{h}}$(date '+Refreshed: %H:%M:%S')${{r}}"
   echo
-  ls -lh "${{DIR}}" 2>/dev/null \\
-    | awk 'NR>1{{n=$9;for(i=10;i<=NF;i++)n=n FS $i;print $6,$7,$8,n}}' \\
-    | column -t \\
-    | while IFS= read -r line; do
-        printf '%s%s%s\\n' "$g" "$line" "$r"
-      done
+  latest_dir=$(ls -dt "${{DIR}}"/[0-9]*/ 2>/dev/null | head -1)
+  if [ -n "${{latest_dir}}" ]; then
+    latest_name=$(basename "${{latest_dir}}")
+    latest_mtime=$(stat -f "%Sm" -t "%b %d  %H:%M" "${{latest_dir}}" 2>/dev/null)
+    echo "${{b}}${{h}}Latest:  ${{latest_name}}  (${{latest_mtime}})${{r}}"
+    echo
+  fi
+  count=0
+  printf "${{h}}%3s  %-10s  %-5s  %-5s${{r}}\\n" "#" "Date" "Start" "End"
+  printf "${{h}}%s${{r}}\\n" "---  ----------  -----  -----"
+  while IFS= read -r fpath; do
+    [ -z "${{fpath}}" ] && continue
+    count=$((count + 1))
+    fname=$(basename "${{fpath}}" .m4a)
+    date_raw=$(echo "${{fname}}" | grep -oE '[0-9]{{8}}' | head -1)
+    start_raw=$(echo "${{fname}}" | grep -oE 'start[0-9]{{4}}' | sed 's/start//')
+    end_raw=$(echo "${{fname}}" | grep -oE 'end[0-9]{{4}}' | sed 's/end//')
+    if [ -n "${{date_raw}}" ]; then
+      date_fmt="${{date_raw:0:4}}-${{date_raw:4:2}}-${{date_raw:6:2}}"
+    else
+      date_fmt="????????"
+    fi
+    if [ -n "${{start_raw}}" ]; then
+      start_fmt="${{start_raw:0:2}}:${{start_raw:2:2}}"
+    else
+      start_fmt="--:--"
+    fi
+    if [ -n "${{end_raw}}" ]; then
+      end_fmt="${{end_raw:0:2}}:${{end_raw:2:2}}"
+    else
+      end_fmt="--:--"
+    fi
+    printf "${{g}}%3d  %-10s  %-5s  %-5s${{r}}\\n" "${{count}}" "${{date_fmt}}" "${{start_fmt}}" "${{end_fmt}}"
+  done < <(find "${{DIR}}" -maxdepth 2 -name "*.m4a" -not -name ".*" 2>/dev/null | sort)
+  echo
+  if [ "${{count}}" -eq 0 ]; then
+    echo "${{g}}(no recordings yet)${{r}}"
+  else
+    echo "${{g}}${{count}} session(s)${{r}}"
+  fi
   sleep 60
 done
 """
@@ -1457,6 +1493,10 @@ done
 
     # Embed the script path safely via AppleScript's 'quoted form of'.
     as_script = str(watch_script).replace("\\", "\\\\").replace('"', '\\"')
+    # Fix for right-alignment: capture the tab returned by 'do script' and use
+    # 'tell (window of _tab)' so we always target the new window, not whatever
+    # window happens to be frontmost after the delay (the main terminal may
+    # steal focus and cause 'front window' to refer to the wrong window).
     applescript = f"""\
 tell application "Finder"
     set _b to bounds of window of desktop
@@ -1466,14 +1506,16 @@ tell application "Finder"
 end tell
 set _script to "{as_script}"
 tell application "Terminal"
-    do script "bash " & quoted form of _script
+    set _tab to do script "bash " & quoted form of _script
     delay 0.8
-    set bounds of front window to {{_lw, 0, _sw, _sh}}
-    set number of columns of front window to 60
-    delay 0.3
-    set _wb to bounds of front window
-    set _ww to (item 3 of _wb) - (item 1 of _wb)
-    set bounds of front window to {{_sw - _ww, 0, _sw, _sh}}
+    tell (window of _tab)
+        set bounds to {{_lw, 0, _sw, _sh}}
+        set number of columns to 60
+        delay 0.3
+        set _wb to bounds
+        set _ww to (item 3 of _wb) - (item 1 of _wb)
+        set bounds to {{_sw - _ww, 0, _sw, _sh}}
+    end tell
 end tell
 """
     try:
