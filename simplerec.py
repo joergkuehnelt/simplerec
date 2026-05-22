@@ -791,6 +791,23 @@ class RecorderState:
         self._apply_gain(now, pct, msg)
         self.append_gain_event_to_playlist(msg)
 
+    def _reset_gain_for_new_segment(self) -> None:
+        """Reset input gain to AUTO_GAIN_TARGET (80%) on every (re)start of a
+        segment so monitoring begins from a known baseline. Also clears the
+        weak-signal timer and the autogain cooldown so the algorithm can react
+        immediately to the new segment's signal level."""
+        now = time.monotonic()
+        _set_input_gain(AUTO_GAIN_TARGET)
+        self.gain_current_pct = AUTO_GAIN_TARGET
+        self.gain_weak_since = None
+        self.gain_last_adjust = 0.0
+        msg = f"reset → {AUTO_GAIN_TARGET}% (segment start)"
+        with self.lock:
+            self.gain_last_action = msg
+            self.gain_last_action_at = now
+            self.gain_history.append((now, AUTO_GAIN_TARGET))
+        self.append_gain_event_to_playlist(msg)
+
     def check_auto_gain(self) -> None:
         """Raise or lower macOS input gain depending on signal level."""
         if not self.auto_gain_enabled:
@@ -934,9 +951,15 @@ class RecorderState:
         with self.lock:
             if self.playlist_only:
                 self.mode = "playlist"
-                return
-            tmp_name = temp_wav_name(seg_dir, start_wall)
-            self.current_temp_name = tmp_name
+                # also reset gain for playlist-only restarts
+                playlist_only_reset = True
+            else:
+                playlist_only_reset = False
+                tmp_name = temp_wav_name(seg_dir, start_wall)
+                self.current_temp_name = tmp_name
+        if playlist_only_reset:
+            self._reset_gain_for_new_segment()
+            return
         try:
             new_file = sf.SoundFile(str(tmp_name), mode="w", samplerate=self.samplerate, channels=self.channels, subtype="PCM_16")
         except Exception:
@@ -950,6 +973,9 @@ class RecorderState:
         with self.lock:
             self.current_file = new_file
             self.mode = "recording"
+        # Reset gain to AUTO_GAIN_TARGET on every (re)start so each segment
+        # begins from a known baseline, regardless of autogain state.
+        self._reset_gain_for_new_segment()
 
     def _remove_song_status_file(self) -> None:
         """Delete the live current_song_*.txt status file (kept only while recording)."""
