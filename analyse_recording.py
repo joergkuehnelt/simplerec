@@ -199,27 +199,55 @@ def _analyse_wav(wav_path: Path) -> dict:
 
 # ── Rendering ─────────────────────────────────────────────────────────────────
 
+# Tricolor bar thresholds (fraction of bar_width; 0 = −60 dBFS, 1 = 0 dBFS)
+_BAR_YELLOW_FRAC = (60 - 20) / 60   # green  → yellow at −20 dBFS
+_BAR_RED_FRAC    = (60 -  7) / 60   # yellow → red    at  −7 dBFS
+
+
+def _level_color(rms_db: float) -> str:
+    if rms_db > -7:
+        return RED
+    if rms_db > -20:
+        return YELLOW
+    if rms_db > -50:
+        return GREEN
+    return GREY
+
+
+def _tricolor_bar(rms_db: float, bar_width: int) -> str:
+    frac   = max(0.0, min(1.0, (rms_db + 60.0) / 60.0))
+    filled = int(round(frac * bar_width))
+    y_pos  = int(round(_BAR_YELLOW_FRAC * bar_width))
+    r_pos  = int(round(_BAR_RED_FRAC    * bar_width))
+    bar = ""
+    for i in range(bar_width):
+        if i < filled:
+            if i < y_pos:
+                bar += GREEN  + "█"
+            elif i < r_pos:
+                bar += YELLOW + "█"
+            else:
+                bar += RED    + "█"
+        else:
+            bar += DIM + GREY + "░"
+    return bar + RESET
+
+
 def _render_level_map(level_map: list[dict], bar_width: int = 52) -> None:
     if not level_map:
         return
     print(f"\n{AMBER}{BOLD}Loudness map  (one row = 1 minute):{RESET}")
-    print(f"{GREY}  min   peak    rms   │{'−60dBFS':^20}{'0dBFS':>20}│{RESET}")
+    print(f"{GREY}  min   peak    rms   "
+          f"│{GREEN}██ good{RESET}{GREY}  "
+          f"{YELLOW}██ hot{RESET}{GREY}  "
+          f"{RED}██ clip danger{RESET}{GREY}  (RMS){RESET}")
     print(f"{GREY}  ─────────────────────{'─' * bar_width}──{RESET}")
     for e in level_map:
         rms  = e["rms_db"]
         peak = e["peak_db"]
-        frac = max(0.0, min(1.0, (rms + 60.0) / 60.0))
-        filled = int(round(frac * bar_width))
-        if rms > -6:
-            color = RED
-        elif rms > -18:
-            color = AMBER
-        elif rms > -35:
-            color = GREEN
-        else:
-            color = GREY
-        bar = color + "█" * filled + DIM + GREY + "░" * (bar_width - filled) + RESET
-        print(f"  {e['minute']:>3}   {peak:>+5.1f}  {rms:>+6.1f}   {bar}")
+        col  = _level_color(rms)
+        bar  = _tricolor_bar(rms, bar_width)
+        print(f"  {e['minute']:>3}   {col}{peak:>+5.1f}  {rms:>+6.1f}{RESET}   {bar}")
 
 
 def _print_playlist(folder: Path) -> None:
@@ -238,18 +266,18 @@ def _print_playlist(folder: Path) -> None:
             if not ln:
                 continue
             parts = ln.split(";")
+            elapsed = parts[1].strip() if len(parts) > 1 else ""
             if len(parts) >= 4 and parts[2].strip().upper() == "CLIP-ADJUST":
-                print(f"  {YELLOW}{parts[0]}  ⚙ {parts[3].strip()}{RESET}")
+                print(f"  {YELLOW}{elapsed}  \u2699 {parts[3].strip()}{RESET}")
             elif len(parts) >= 4 and parts[2].strip():
                 artist = parts[2].strip()
                 title  = parts[3].strip()
                 genre  = parts[4].strip() if len(parts) > 4 else ""
                 year   = parts[5].strip() if len(parts) > 5 else ""
-                meta   = "  " + "  ·  ".join(p for p in [genre, year] if p) if (genre or year) else ""
-                print(f"  {BLUE}{parts[0]}{RESET}  {BOLD}{artist}{RESET} – {title}{GREY}{meta}{RESET}")
+                meta   = "  " + "  \u00b7  ".join(p for p in [genre, year] if p) if (genre or year) else ""
+                print(f"  {GREEN}{elapsed}{RESET}  {BOLD}{artist}{RESET} \u2013 {title}{GREY}{meta}{RESET}")
             else:
-                elapsed = parts[1].strip() if len(parts) > 1 else ""
-                print(f"  {GREY}{parts[0]}  [{elapsed}]  –no match–{RESET}")
+                print(f"  {GREY}{elapsed}  \u2013 no match \u2013{RESET}")
     except OSError as e:
         print(f"  {RED}(could not read playlist: {e}){RESET}")
 
