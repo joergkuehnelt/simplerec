@@ -289,15 +289,18 @@ def clip_history_linegraph(history: list[float], cols: int = 60) -> list[str]:
         'format': '{:7.0f} ',
     })
     # Row colours matching the original 10-band grid (top → bottom):
-    # 0 dBFS = RED, -3 = RED_BRIGHT, -6…-15 = AMBER, -18…-27 = GREEN
-    row_colors = [RED, RED_BRIGHT, AMBER, AMBER, AMBER, AMBER, GREEN, GREEN, GREEN, GREEN]
-    # Rows that get a dim dotted reference line (indices: row 1 = -3 dBFS, row 3 = -9 dBFS)
+    # 0 dBFS = RED, -3 = RED_BRIGHT, -6…-18 = AMBER, -21…-27 = GREEN
+    # Row 6 (-18 dBFS) is AMBER: asciichartpy rounds -17 dBFS to this row,
+    # which the peakline still shows as AMBER (band "-15 dBFS", lo=-18).
+    row_colors = [RED, RED_BRIGHT, AMBER, AMBER, AMBER, AMBER, AMBER, GREEN, GREEN, GREEN]
+    # Rows that get a dim dashed reference line (row 1 = -3 dBFS, row 3 = -9 dBFS)
     ref_rows = {1, 3}
     out: list[str] = []
     for i, line in enumerate(chart_str.splitlines()):
         color = row_colors[i] if i < len(row_colors) else GREEN
         if i in ref_rows:
             # Draw a dim dashed reference line in the data area (spaces → ─).
+            # Dash colour matches the zone colour (dim RED_BRIGHT at -3, dim AMBER at -9).
             # asciichartpy uses ┤ (U+2524) or ┼ (U+253C) as axis separator.
             sep = max(line.find('┤'), line.find('┼'))
             if sep >= 0:
@@ -305,7 +308,7 @@ def clip_history_linegraph(history: list[float], cols: int = 60) -> list[str]:
                 # asciichartpy omits trailing spaces on empty rows → pad to cols.
                 data_raw = line[sep + 1:].ljust(cols)
                 data = ''.join(
-                    f"{DIM}{AMBER}─{RESET}" if c == ' ' else c
+                    f"{DIM}{color}─{RESET}" if c == ' ' else f"{color}{c}{RESET}"
                     for c in data_raw
                 )
                 out.append(f"{color}{label}{data}{RESET}")
