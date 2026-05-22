@@ -219,6 +219,31 @@ def colored_meter(dbfs: float, peak_hold_db: float, width: int = METER_WIDTH) ->
     return "".join(out) + RESET
 
 
+def clip_history_bar(history: list[float], width: int = METER_WIDTH) -> str:
+    """Render rolling per-second peak history as a coloured heatmap row.
+
+    Each cell is the wall-second's peak dBFS, oldest left → newest right.
+    Block height encodes severity; colour matches the meter zones so a glance
+    tells whether clipping is a one-off spike or sustained.
+    """
+    cells = list(history)[-width:]
+    if len(cells) < width:
+        cells = [-120.0] * (width - len(cells)) + cells
+    out = []
+    for db in cells:
+        if db < -30.0:
+            out.append(f"{GREY}·")
+        elif db < -18.0:
+            out.append(f"{GREEN}▂")
+        elif db < -6.0:
+            out.append(f"{AMBER}▄")
+        elif db < -3.0:
+            out.append(f"{RED_BRIGHT}▆")
+        else:
+            out.append(f"{RED}█")
+    return "".join(out) + RESET
+
+
 def _set_input_gain(pct: int) -> None:
     """Set macOS system microphone input gain via osascript (0–100)."""
     # Clamp and force int to prevent injection if caller ever passes a non-int.
@@ -443,6 +468,10 @@ class RecorderState:
     clip_hold_until: float = 0.0
     clip_count: int = 0
     simulate_clip_until: float = 0.0  # [T] key – force clipping banner for a few seconds (test)
+    # Rolling 60-second peak history (one peak-dBFS sample per wall-clock second).
+    clip_history: deque = field(default_factory=lambda: deque([-120.0] * 60, maxlen=60))
+    clip_history_sec: int = 0           # last integer-second bucket written
+    clip_history_cur_peak: float = 0.0  # running linear peak for the current bucket
     gain_last_adjust: float = 0.0
     gain_weak_since: Optional[float] = None
     gain_last_action: str = ""  # for UI display
@@ -784,6 +813,20 @@ class RecorderState:
             if max(peak_lr) >= CLIP_THRESHOLD:
                 self.clip_hold_until = now + CLIP_HOLD_SECONDS
                 self.clip_count += 1
+            # 60-second peak history (one bucket per wall-clock second).
+            cur_sec = int(now)
+            if self.clip_history_sec == 0:
+                self.clip_history_sec = cur_sec
+            if cur_sec != self.clip_history_sec:
+                self.clip_history.append(linear_to_dbfs(self.clip_history_cur_peak))
+                # Fill any skipped seconds with silence so the timeline stays linear.
+                for _ in range(max(0, cur_sec - self.clip_history_sec - 1)):
+                    self.clip_history.append(-120.0)
+                self.clip_history_sec = cur_sec
+                self.clip_history_cur_peak = 0.0
+            peak_max = max(peak_lr)
+            if peak_max > self.clip_history_cur_peak:
+                self.clip_history_cur_peak = peak_max
             need_write = self.mode == "recording" and self.current_file is not None
         if need_write:
             self.writer_q.put(indata.copy())
@@ -1323,6 +1366,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         photo_countdown = state.photo_countdown
         gain_supported = state.gain_control_supported
         simulate_clip_active = time.monotonic() < state.simulate_clip_until
+        clip_history_snapshot = list(state.clip_history)
     elapsed = state.elapsed_segment_seconds() if mode in ("recording", "playlist") else 0.0
     db_l = linear_to_dbfs(rms_l)
     db_r = linear_to_dbfs(rms_r)
@@ -1444,6 +1488,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         f"{AMBER}{BOLD}L {db_l:6.1f} dBFS {AMBER}[{colored_meter(db_l, hold_l)}{AMBER}]{RESET}", W))
     print(_box_row(
         f"{AMBER}{BOLD}R {db_r:6.1f} dBFS {AMBER}[{colored_meter(db_r, hold_r)}{AMBER}]{RESET}", W))
+    print(_box_row(
+        f"{AMBER}60s peak      {AMBER}[{clip_history_bar(clip_history_snapshot)}{AMBER}]{RESET}", W))
     print(_box_row(
         f"{AMBER}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS"
         f"   Pending: {pending_conversions}{RESET}", W))
