@@ -1446,6 +1446,7 @@ tell application "Finder"
 end tell
 tell application "Terminal"
     set bounds of front window to {0, 0, _w, _h}
+    set number of columns of front window to 80
 end tell
 '''
     try:
