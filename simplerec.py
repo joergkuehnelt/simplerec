@@ -1361,8 +1361,13 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(_box_row(
         f"{AMBER}Ch: {channels}{sys_txt}{RESET}", W))
     if clip_active:
-        print(_box_row(
-            f"{RED}{BOLD}⚠ CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}", W))
+        if gain_supported:
+            print(_box_row(
+                f"{RED}{BOLD}⚠ CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}", W))
+        else:
+            print(_box_row(
+                f"{RED}{BOLD}{BLINK}⚠ CLIPPING! Reduce level at SOURCE (mixer/pad).{RESET}"
+                f"{RED}{BOLD}  (Events: {clip_count}){RESET}", W))
     if start_wall and mode in ("recording", "playlist"):
         print(_box_row(f"{AMBER}Start  : {start_wall:%Y-%m-%d %H:%M:%S}{RESET}", W))
     elif mode == "preview" and preview_end is not None:
