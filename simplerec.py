@@ -1404,6 +1404,38 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
     return out
 
 
+def _open_dir_window(output_dir: Path) -> None:
+    """Open a second Terminal window on the right half of the screen.
+
+    Shows a refreshing 'ls -la' of the output directory, updated every 10 min.
+    Positioned on the right half of the screen, 60 columns wide.
+    """
+    as_path = str(output_dir).replace("\\", "\\\\").replace('"', '\\"')
+    script = f"""\
+tell application "Finder"
+    set _b to bounds of window of desktop
+    set _sw to item 3 of _b
+    set _sh to item 4 of _b
+    set _lw to _sw div 2
+end tell
+set _dir to "{as_path}"
+tell application "Terminal"
+    do script "while true; do clear; ls -la " & quoted form of _dir & "; sleep 600; done"
+    delay 0.8
+    set bounds of front window to {{_lw, 0, _sw, _sh}}
+    set number of columns of front window to 60
+end tell
+"""
+    try:
+        subprocess.run(
+            ["osascript"],
+            input=script.encode("utf-8"),
+            capture_output=True, timeout=5.0, check=False,
+        )
+    except Exception:
+        pass
+
+
 def _position_terminal_left() -> None:
     """Snap the Terminal window to the left half of the screen (best-effort)."""
     script = '''
@@ -1665,6 +1697,7 @@ def main():
     print("macOS CLI Audio Recorder (.m4a, Stereo, Song Recognition)\n")
     print("Tip: run with --help or --help-messages for usage information.\n")
     output_dir = choose_output_dir()
+    _open_dir_window(output_dir)
     max_minutes = ask_recording_minutes()
     filename_prefix = ask_filename_prefix()
     dj_photos = ask_dj_photos()
