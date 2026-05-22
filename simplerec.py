@@ -186,9 +186,15 @@ def classify_level(rms: float) -> str:
 
 
 def bar_color(index: int, width: int) -> str:
-    if index < int(width * 0.88):
-        return AMBER
-    return RED
+    # Map cell index back to dBFS (meter spans -40..0 dBFS, right edge of cell).
+    db = -40.0 + (index + 1) * (40.0 / max(1, width))
+    if db < -18.0:
+        return GREEN        # ok / safe
+    if db < -6.0:
+        return AMBER        # on spot / nominal
+    if db < -3.0:
+        return RED_BRIGHT   # clipping danger
+    return RED              # clipping
 
 
 def colored_meter(dbfs: float, peak_hold_db: float, width: int = METER_WIDTH) -> str:
@@ -1393,38 +1399,37 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     print(_box_bot(W))
     print()
 
-    # ── Box · Auto-gain history ─────────────────────────────────────────────
-    cur_txt = f"  (now: {gain_current}%)" if gain_current is not None else ""
-    if not gain_supported:
-        mode_tag = f"{YELLOW}[N/A]{RESET}"
-    elif auto_gain_on:
-        mode_tag = f"{GREEN}[AUTO]{RESET}"
-    else:
-        mode_tag = f"{YELLOW}[MANUAL]{RESET}"
-    recent_adjust = (
-        gain_action != ""
-        and gain_action_at > 0.0
-        and (time.monotonic() - gain_action_at) <= AUTO_GAIN_MSG_TTL
-    )
-    if recent_adjust:
-        action_txt = gain_action
-        msg_color = f"{RED}{BOLD}"
-    else:
-        action_txt = gain_action if gain_action else "(idle)"
-        msg_color = AMBER
-    status_line = f"{AMBER}Auto-gain:{RESET} {mode_tag} {msg_color}{action_txt}{cur_txt}{RESET}"
-    grid_rows = _render_gain_grid(gain_history, time.monotonic())
-    row_labels = ["100%", " 80%", " 60%", " 40%", " 20%"]
-    print(_box_top(W))
-    print(_box_row(status_line, W))
-    print(_box_row("", W))
-    for i, row in enumerate(grid_rows):
-        print(_box_row(f"{AMBER}{row_labels[i]} │{RESET}{row}", W))
-    tick = "     " + "".join("┴" if (c % 5 == 0) else "─" for c in range(50))
-    print(_box_row(f"{AMBER}{tick}{RESET}", W))
-    print(_box_row(f"{AMBER}      ←10 min" + " " * 35 + f"now→{RESET}", W))
-    print(_box_bot(W))
-    print()
+    # ── Box · Auto-gain history (hidden when device has no software gain) ──
+    if gain_supported:
+        cur_txt = f"  (now: {gain_current}%)" if gain_current is not None else ""
+        if auto_gain_on:
+            mode_tag = f"{GREEN}[AUTO]{RESET}"
+        else:
+            mode_tag = f"{YELLOW}[MANUAL]{RESET}"
+        recent_adjust = (
+            gain_action != ""
+            and gain_action_at > 0.0
+            and (time.monotonic() - gain_action_at) <= AUTO_GAIN_MSG_TTL
+        )
+        if recent_adjust:
+            action_txt = gain_action
+            msg_color = f"{RED}{BOLD}"
+        else:
+            action_txt = gain_action if gain_action else "(idle)"
+            msg_color = AMBER
+        status_line = f"{AMBER}Auto-gain:{RESET} {mode_tag} {msg_color}{action_txt}{cur_txt}{RESET}"
+        grid_rows = _render_gain_grid(gain_history, time.monotonic())
+        row_labels = ["100%", " 80%", " 60%", " 40%", " 20%"]
+        print(_box_top(W))
+        print(_box_row(status_line, W))
+        print(_box_row("", W))
+        for i, row in enumerate(grid_rows):
+            print(_box_row(f"{AMBER}{row_labels[i]} │{RESET}{row}", W))
+        tick = "     " + "".join("┴" if (c % 5 == 0) else "─" for c in range(50))
+        print(_box_row(f"{AMBER}{tick}{RESET}", W))
+        print(_box_row(f"{AMBER}      ←10 min" + " " * 35 + f"now→{RESET}", W))
+        print(_box_bot(W))
+        print()
 
     # ── Box 2 · Level Meter ─────────────────────────────────────────────────
     print(_box_top(W))
