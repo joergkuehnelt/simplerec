@@ -1736,9 +1736,12 @@ def main():
                     pct = {"0": 100, "2": 20, "4": 40, "6": 60, "8": 80}[key]
                     state.manual_set_gain(pct)
                 elif key == "t":
-                    # Simulate clipping for 3s so the banner styling can be tested without signal.
+                    # Simulate clipping: show banner for 3 s AND inject a 0 dBFS
+                    # spike into the peak history so the graph also shows it.
                     with state.lock:
                         state.simulate_clip_until = time.monotonic() + 3.0
+                        state.clip_history.append(0.0)
+                        state.clip_history_cur_peak = 1.0  # keep current bucket at max too
                 elif key == "u":
                     # Save current segment, then launch the updater script
                     if state.mode in ("recording", "playlist"):
