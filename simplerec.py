@@ -1147,14 +1147,26 @@ class RecorderState:
         self._reset_gain_for_new_segment()
 
     def _remove_song_status_file(self) -> None:
-        """Delete the live current_song_*.txt status file (kept only while recording)."""
+        """Delete the live current_song_*.txt status file (kept only while recording).
+
+        Also removes any session-fallback files (current_song_session.txt) that were
+        written to the root output_dir before session_start_wall was set.
+        """
         try:
             with self.lock:
                 fname = self._song_status_fname()
                 base_dir = self.segment_dir or self.output_dir
+                output_dir = self.output_dir
+                prefix = self.filename_prefix
             f = base_dir / fname
             if f.exists():
                 f.unlink()
+            # Clean up the session-fallback status file from the root output dir.
+            # It is written before session_start_wall is set and may not match
+            # the timestamp-based fname constructed above.
+            session_fallback = output_dir / f"{prefix}current_song_session.txt"
+            if session_fallback != f and session_fallback.exists():
+                session_fallback.unlink()
         except OSError:
             pass
 
