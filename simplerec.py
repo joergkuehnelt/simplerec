@@ -1458,6 +1458,10 @@ tell application "Terminal"
     delay 0.8
     set bounds of front window to {{_lw, 0, _sw, _sh}}
     set number of columns of front window to 60
+    delay 0.3
+    set _wb to bounds of front window
+    set _ww to (item 3 of _wb) - (item 1 of _wb)
+    set bounds of front window to {{_sw - _ww, 0, _sw, _sh}}
 end tell
 """
     try:
