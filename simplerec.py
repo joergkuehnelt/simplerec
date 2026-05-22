@@ -220,24 +220,28 @@ def colored_meter(dbfs: float, peak_hold_db: float, width: int = METER_WIDTH) ->
 
 
 def clip_history_peakline(history: list[float], cols: int = 60) -> list[str]:
-    """Return 6 band-row strings showing one peak marker per second placed in
-    the row whose dB band contains that second's peak. No body fill below the
-    cap. Empty cells are blank. Newest sample is on the right.
+    """Return 10 band-row strings (3 dB steps) showing one peak dot per 0.5 s
+    placed in the row whose dB band contains that sample's peak.
+    No body fill – every other position in every row is a blank space.
+    Newest sample is on the right (cols-1).
 
-    Each row is rendered as ``"<8-char label> │<cols chars>"`` so the bar `│`
-    sits at a fixed column and the data area is exactly `cols` chars wide.
+    Each row: ``"<8-char label> │<cols chars>"`` — prefix = 10 visible chars,
+    data area = cols chars, total = 10+cols (fits 76-char inner box at cols=60).
     """
     cells = list(history)[-cols:]
     if len(cells) < cols:
         cells = [-120.0] * (cols - len(cells)) + cells
-    # Bands top → bottom. ``lo`` is the inclusive lower bound; a sample falls
-    # into the first row whose lo it meets or exceeds.
+    # Bands top → bottom. A sample falls into the first band whose lo it meets.
     bands = (
-        ("  0 dBFS", -3.0,   RED),         # clip zone
+        ("  0 dBFS", -3.0,   RED),         # clip
         (" -3 dBFS", -6.0,   RED_BRIGHT),  # danger
-        (" -6 dBFS", -12.0,  AMBER),       # hot nominal
-        ("-12 dBFS", -18.0,  AMBER),       # nominal
-        ("-18 dBFS", -30.0,  GREEN),       # safe
+        (" -6 dBFS", -9.0,   AMBER),       # hot
+        (" -9 dBFS", -12.0,  AMBER),
+        ("-12 dBFS", -15.0,  AMBER),
+        ("-15 dBFS", -18.0,  AMBER),       # nominal lower edge
+        ("-18 dBFS", -21.0,  GREEN),
+        ("-21 dBFS", -24.0,  GREEN),
+        ("-24 dBFS", -30.0,  GREEN),
         ("-30 dBFS", -120.0, GREEN),       # low / silence
     )
     row_for_cell: list[int] = []
@@ -253,7 +257,7 @@ def clip_history_peakline(history: list[float], cols: int = 60) -> list[str]:
         marks: list[str] = []
         for ci in row_for_cell:
             if ci == r:
-                marks.append(f"{color}{BOLD}▮{RESET}")
+                marks.append(f"{color}{BOLD}•{RESET}")
             else:
                 marks.append(" ")
         out.append(f"{DIM}{AMBER}{lbl} │{RESET}{''.join(marks)}")
@@ -484,9 +488,9 @@ class RecorderState:
     clip_hold_until: float = 0.0
     clip_count: int = 0
     simulate_clip_until: float = 0.0  # [T] key – force clipping banner for a few seconds (test)
-    # Rolling 60-second peak history (one peak-dBFS sample per wall-clock second).
+    # Rolling 30-second peak history (one peak-dBFS sample per 0.5 s, 60 samples).
     clip_history: deque = field(default_factory=lambda: deque([-120.0] * 60, maxlen=60))
-    clip_history_sec: int = 0           # last integer-second bucket written
+    clip_history_sec: int = 0           # last 0.5-second bucket id (int(monotonic * 2))
     clip_history_cur_peak: float = 0.0  # running linear peak for the current bucket
     gain_last_adjust: float = 0.0
     gain_weak_since: Optional[float] = None
@@ -829,13 +833,13 @@ class RecorderState:
             if max(peak_lr) >= CLIP_THRESHOLD:
                 self.clip_hold_until = now + CLIP_HOLD_SECONDS
                 self.clip_count += 1
-            # 60-second peak history (one bucket per wall-clock second).
-            cur_sec = int(now)
+            # 30-second peak history (one bucket per 0.5 s, 60 samples).
+            cur_sec = int(now * 2)
             if self.clip_history_sec == 0:
                 self.clip_history_sec = cur_sec
             if cur_sec != self.clip_history_sec:
                 self.clip_history.append(linear_to_dbfs(self.clip_history_cur_peak))
-                # Fill any skipped seconds with silence so the timeline stays linear.
+                # Fill any skipped half-seconds with silence.
                 for _ in range(max(0, cur_sec - self.clip_history_sec - 1)):
                     self.clip_history.append(-120.0)
                 self.clip_history_sec = cur_sec
@@ -1415,24 +1419,15 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     W = 80
     clear_screen()
 
-    # ── Logo ────────────────────────────────────────────────────────────────
-    print()
-    print(f"{AMBER}{BOLD}███████ ██ ███    ███ ██████  ██      ███████ ██████  ███████  ██████ {RESET}")
-    print(f"{AMBER}{BOLD}██      ██ ████  ████ ██   ██ ██      ██      ██   ██ ██      ██      {RESET}")
-    print(f"{AMBER}{BOLD}███████ ██ ██ ████ ██ ██████  ██      █████   ██████  █████   ██      {RESET}")
-    print(f"{AMBER}{BOLD}     ██ ██ ██  ██  ██ ██      ██      ██      ██   ██ ██      ██      {RESET}")
-    print(f"{AMBER}{BOLD}███████ ██ ██      ██ ██      ███████ ███████ ██   ██ ███████  ██████ {DIM} v{VERSION}{RESET}")
-    print()
+    # ── Header ──────────────────────────────────────────────────────────────
+    print(f"{AMBER}{BOLD}  SIMPLEREC  v{VERSION}{RESET}")
 
     # ── Box 1 · Device & Status ─────────────────────────────────────────────
     print(_box_top(W))
-    print(_box_row(f"{AMBER}Device : {_trunc(device_name, 56)}  {ch_label}{RESET}", W))
-    folder_display = seg_dir if seg_dir is not None else outdir
-    print(_box_row(f"{AMBER}Folder : {_trunc(str(folder_display), 67)}{RESET}", W))
+    print(_box_row(
+        f"{AMBER}Device : {_trunc(device_name, 44)}  {ch_label}{sys_txt}{RESET}", W))
     print(_box_row(
         f"{AMBER}Status : {status_label}{AMBER}    Length : {BLUE}{BOLD}{human_duration(elapsed)}{RESET}{AMBER}{remaining_txt}{RESET}", W))
-    print(_box_row(
-        f"{AMBER}Ch: {channels}{sys_txt}{RESET}", W))
     if clip_active:
         if gain_supported:
             print(_box_row(
@@ -1441,15 +1436,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
             print(_box_row(
                 f"{RED}{BOLD}{BLINK}⚠ CLIPPING! Reduce level at SOURCE (mixer/pad).{RESET}"
                 f"{RED}{BOLD}  (Events: {clip_count}){RESET}", W))
-    if start_wall and mode in ("recording", "playlist"):
-        print(_box_row(f"{AMBER}Start  : {start_wall:%Y-%m-%d %H:%M:%S}{RESET}", W))
-    elif mode == "preview" and preview_end is not None:
-        preview_rms = max(prev_l, prev_r)
-        remaining = max(0, int(round(preview_end - time.monotonic())))
-        print(_box_row(
-            f"{AMBER}Preview: {remaining}s left  ·  {classify_level(preview_rms)}{RESET}", W))
-    else:
-        print(_box_row(f"{AMBER}Preview: completed / Pause{RESET}", W))
     # DJ picture status
     if photo_enabled:
         dj_status = f"{GREEN}{BOLD}ON{RESET}"
@@ -1464,7 +1450,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         print(_box_row(
             f"{YELLOW}{BOLD}⚠ Device has no software gain control – adjust level at source.{RESET}", W))
     print(_box_bot(W))
-    print()
 
     # ── Box · Auto-gain history (hidden when device has no software gain) ──
     if gain_supported:
@@ -1496,7 +1481,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         print(_box_row(f"{AMBER}{tick}{RESET}", W))
         print(_box_row(f"{AMBER}      ←10 min" + " " * 35 + f"now→{RESET}", W))
         print(_box_bot(W))
-        print()
 
     # ── Box 2 · Level Meter ─────────────────────────────────────────────────
     print(_box_top(W))
@@ -1515,32 +1499,24 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
             _ruler[_pos + _i] = _c
     _ruler[METER_WIDTH - 1] = "0"
     print(_box_row(f"{DIM}{AMBER}              {''.join(_ruler)} {RESET}", W))
-    print(_box_row(
-        f"{AMBER}Peak-Hold L/R: {hold_l:6.1f} / {hold_r:6.1f} dBFS"
-        f"   Pending: {pending_conversions}{RESET}", W))
-    # Visual separator between VU meter and 60s peak history
+    # Visual separator between VU meter and 30s peak history
     print(f"{AMBER}╟{'─' * (W - 2)}╢{RESET}")
-    # 60s peak history: 6-band peak-line, 1 column = 1 second.
-    print(_box_row(
-        f"{AMBER}{BOLD}60s Peak History{RESET}"
-        f"{AMBER}{DIM}  (1 col = 1 s · newest right){RESET}", W))
     for _row in clip_history_peakline(clip_history_snapshot, cols=60):
         print(_box_row(_row, W))
-    # Baseline with 10-second tick marks (┴ at -50/-40/-30/-20/-10/now).
+    # Baseline with 5-second tick marks (every 10 cols = 5 s at 0.5 s/col).
     _ticks = "".join(
         "┴" if i in (0, 10, 20, 30, 40, 50, 59) else "─"
         for i in range(60)
     )
     print(_box_row(f"{DIM}{AMBER}         └{_ticks}{RESET}", W))
-    # Time axis: -60s on the left, now on the right, aligned under data.
-    _axis = "-60s" + " " * (60 - len("-60s") - len("now")) + "now"
+    # Time axis: -30s on the left, now on the right, aligned under data.
+    _axis = "-30s" + " " * (60 - len("-30s") - len("now")) + "now"
     print(_box_row(f"{DIM}{AMBER}          {_axis}{RESET}", W))
     # Blinking clipping banner (white on red), shown only while peak is clipping.
     if max(peak_l, peak_r) >= LEVEL_CLIP_LINEAR or simulate_clip_active:
         print(_box_row(
             f"{BG_RED}{FG_WHITE}{BOLD}{BLINK} ⚠ CLIPPING – REDUCE GAIN {RESET}", W))
     print(_box_bot(W))
-    print()
 
     # ── Box 3 · Song Info ───────────────────────────────────────────────────
     countdown = max(0, int(song_next_at - time.monotonic()))
@@ -1556,7 +1532,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         f"{AMBER}Check: {song_last_check}  Match: {song_last_match}"
         f"  Next: {countdown:2d}s{shazam_ok_txt}{RESET}", W))
     print(_box_bot(W))
-    print()
 
     # ── Key bar ─────────────────────────────────────────────────────────────
     def _key_btn(k: str) -> str:
