@@ -358,12 +358,13 @@ def _find_audacity_app() -> Path | None:
 
 def _open_in_audacity(m4a: Path, labels_path: Path | None) -> None:
     """
-    Open the M4A in Audacity, then import the label file automatically
-    via Audacity's mod-script-pipe scripting interface.
+    Open the M4A in Audacity, then auto-import the label file via
+    AppleScript (System Events) — navigates File > Import > Labels…
+    and fills the file dialog automatically.
 
-    Falls back to clear instructions if the pipe is unavailable
-    (mod-script-pipe is an optional module that must be enabled once in
-    Audacity > Preferences > Modules).
+    Requires Terminal (or the app running this script) to have
+    Accessibility access: System Settings → Privacy & Security →
+    Accessibility → Terminal → enable.
     """
     app = _find_audacity_app()
     if app is None:
@@ -377,78 +378,61 @@ def _open_in_audacity(m4a: Path, labels_path: Path | None) -> None:
         print(f"  {GREEN}Audacity opened.{RESET}")
         return
 
-    # ── Wait for the mod-script-pipe FIFO to appear ───────────────────────
-    uid       = os.getuid()
-    pipe_to   = Path(f"/tmp/audacity_script_pipe.to.{uid}")
-    pipe_from = Path(f"/tmp/audacity_script_pipe.from.{uid}")
-
-    print(f"  {DIM}Waiting for Audacity scripting pipe…{RESET}", end="", flush=True)
-    deadline = time.monotonic() + 15.0
+    # ── Wait for Audacity process to be running ───────────────────────────
+    print(f"  {DIM}Waiting for Audacity to load…{RESET}", end="", flush=True)
+    deadline = time.monotonic() + 25.0
+    ready = False
     while time.monotonic() < deadline:
-        if pipe_to.exists() and pipe_from.exists():
+        r = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to return '
+             '(name of processes) contains "Audacity"'],
+            capture_output=True, text=True,
+        )
+        if r.stdout.strip() == "true":
+            ready = True
             break
         time.sleep(0.5)
-    else:
-        print(f"\r  {YELLOW}Audacity opened  —  to auto-import labels: Preferences → Modules → mod-script-pipe → Enabled → restart Audacity{RESET}")
+
+    if not ready:
+        print(f"\r  {YELLOW}Audacity did not start in time.{RESET}          ")
         return
 
-    # ── Send NewLabelTrack + ImportLabels commands ────────────────────────
-    def _send_cmd(cmd: str) -> str:
-        """Send one command via non-blocking write; return response or '' on timeout."""
-        resp: list[str] = []
+    # Give Audacity time to finish loading the audio file and draw its UI
+    time.sleep(3.5)
 
-        # Start reader thread first (pipe_from stays open on Audacity's side)
-        def _r() -> None:
-            try:
-                with open(pipe_from, "r") as fh:
-                    buf = ""
-                    while True:
-                        ch = fh.read(1)
-                        if not ch or ch == "\0":
-                            break
-                        buf += ch
-                resp.append(buf.strip())
-            except OSError:
-                pass
-
-        t = threading.Thread(target=_r, daemon=True)
-        t.start()
-
-        # Non-blocking write: retry until Audacity is ready to read
-        write_deadline = time.monotonic() + 10.0
-        fd = -1
-        while time.monotonic() < write_deadline:
-            try:
-                fd = os.open(str(pipe_to), os.O_WRONLY | os.O_NONBLOCK)
-                break
-            except OSError as e:
-                if e.errno in (errno.ENXIO, errno.ENOENT):
-                    time.sleep(0.3)
-                else:
-                    t.join(timeout=1.0)
-                    return ""
-        if fd == -1:
-            t.join(timeout=1.0)
-            return ""
-        try:
-            os.write(fd, (cmd + "\n").encode())
-        finally:
-            os.close(fd)
-
-        t.join(timeout=8.0)
-        return resp[0] if resp else ""
-
-    try:
-        _send_cmd("NewLabelTrack:")
-        resp = _send_cmd(f'ImportLabels: Filename="{labels_path}"')
-    except OSError as exc:
-        print(f"\r  {YELLOW}Pipe write error: {exc}{RESET}          ")
-        return
-
-    if resp and "error" in resp.lower():
-        print(f"\r  {YELLOW}Audacity: {resp}{RESET}          ")
+    # ── AppleScript: File > Import > Labels… then fill the file dialog ────
+    esc = str(labels_path).replace("\\", "\\\\").replace('"', '\\"')
+    script = f"""
+tell application "Audacity" to activate
+delay 0.5
+tell application "System Events"
+    tell process "Audacity"
+        click menu item "Labels\u2026" of menu 1 of ¬
+            menu item "Import" of menu "File" of menu bar item "File" of menu bar 1
+        delay 0.8
+        -- Cmd+Shift+G opens "Go to the folder" sheet in the file dialog
+        keystroke "g" using {{command down, shift down}}
+        delay 0.5
+        keystroke "{esc}"
+        delay 0.4
+        key code 36
+        delay 0.5
+        key code 36
+    end tell
+end tell
+"""
+    r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    if r.returncode == 0:
+        print(f"\r  {GREEN}{BOLD}Audacity opened with labels imported.{RESET}          ")
     else:
-        print(f"\r  {GREEN}{BOLD}Audacity opened with labels imported.{RESET}                 ")
+        err = r.stderr.strip().split(":")[-1].strip() if r.stderr else ""
+        print(f"\r  {YELLOW}Labels not auto-imported.{RESET}          ")
+        if "not allowed" in r.stderr or "1002" in r.stderr:
+            print(f"  {DIM}Grant access: System Settings → Privacy & Security → Accessibility → Terminal → enable{RESET}")
+        elif err:
+            print(f"  {DIM}{err[:100]}{RESET}")
+        print(f"  Import manually: File › Import › Labels… › {GREY}{labels_path.name}{RESET}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
