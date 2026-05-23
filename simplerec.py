@@ -1714,6 +1714,10 @@ def main():
     state.photo_enabled = dj_photos
     # Prevent display & idle sleep for the duration of the recording.
     _caffeinate = None
+    # Use the alternate screen buffer so \033[2J never writes to the scrollback
+    # buffer.  Without this, a mouse click in iTerm2 fullscreen scrolls back to
+    # previously cleared frames, making the display appear to double.
+    _alt_screen = sys.stdout.isatty()
     try:
         if shutil.which("caffeinate"):
             _caffeinate = subprocess.Popen(["caffeinate", "-d", "-i"])
@@ -1745,10 +1749,9 @@ def main():
         state.start_photo()
         preview_end = time.monotonic() + PREVIEW_SECONDS
 
-        # Enter alternate screen in iTerm2 so the scrollback buffer stays clean.
+        # Enter alternate screen so the scrollback buffer stays clean.
         # Without this, every \033[2J render pushes old content to scrollback and
         # a mouse click scrolls back to it, making the display appear to scroll.
-        _alt_screen = bool(os.environ.get("ITERM_SESSION_ID"))
         if _alt_screen:
             sys.stdout.write(
                 "\033[?1049h"   # alternate screen buffer
