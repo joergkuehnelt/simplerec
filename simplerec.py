@@ -91,6 +91,7 @@ AMBER = "\033[38;5;214m"
 GREEN = "\033[38;5;46m"
 YELLOW = "\033[38;5;226m"
 RED = "\033[38;5;196m"
+RED_MSG = "\033[38;5;160m"     # slightly softer red for status messages (not VU/peak)
 RED_BRIGHT = "\033[38;5;203m"  # brighter / lighter red for 80% row
 GREY = "\033[38;5;240m"
 BLUE      = "\033[38;5;39m"
@@ -1505,11 +1506,11 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     # remaining time countdown (red)
     if max_record_seconds is not None and session_start_mono is not None:
         secs_left = max(0.0, max_record_seconds - (time.monotonic() - session_start_mono))
-        remaining_txt = f"  {RED}{BOLD}{human_duration(secs_left)} left{RESET}{AMBER}"
+        remaining_txt = f"  {RED_MSG}{BOLD}{human_duration(secs_left)} left{RESET}{AMBER}"
     else:
         remaining_txt = ""
     if mode == "recording":
-        status_label = f"{RED}{BOLD}● REC{RESET}"
+        status_label = f"{RED_MSG}{BOLD}● REC{RESET}"
     elif mode == "playlist":
         status_label = f"{AMBER}{BOLD}♪ PLAYLIST{RESET}"
     else:
@@ -1539,11 +1540,11 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     if clip_active:
         if gain_supported:
             print(_box_row(
-                f"{RED}{BOLD}⚠ CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}", W))
+                f"{RED_MSG}{BOLD}⚠ CLIPPING detected! Reduce input gain.  (Events: {clip_count}){RESET}", W))
         else:
             print(_box_row(
-                f"{RED}{BOLD}{BLINK}⚠ CLIPPING! Reduce level at SOURCE (mixer/pad).{RESET}"
-                f"{RED}{BOLD}  (Events: {clip_count}){RESET}", W))
+                f"{RED_MSG}{BOLD}{BLINK}⚠ CLIPPING! Reduce level at SOURCE (mixer/pad).{RESET}"
+                f"{RED_MSG}{BOLD}  (Events: {clip_count}){RESET}", W))
     # DJ picture status + file activity indicator
     if photo_enabled:
         dj_status = f"{GREEN}{BOLD}ON{RESET}"
@@ -1556,13 +1557,13 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
             if time.time() - mtime < 60:
                 fa_str = f"   {AMBER}File activity: {GREEN}{BOLD}ok{RESET}"
             else:
-                fa_str = f"   {AMBER}File activity: {RED}{BOLD}check status{RESET}"
+                fa_str = f"   {AMBER}File activity: {RED_MSG}{BOLD}check status{RESET}"
         except OSError:
-            fa_str = f"   {AMBER}File activity: {RED}{BOLD}check status{RESET}"
+            fa_str = f"   {AMBER}File activity: {RED_MSG}{BOLD}check status{RESET}"
     print(_box_row(f"{AMBER}DJ PIC : {dj_status}{fa_str}{RESET}", W))
     if photo_countdown is not None:
         s = "s" if photo_countdown != 1 else ""
-        smile_msg = f"{RED}{BLINK}{BOLD}  \U0001f4f7 SMILE IN {photo_countdown} second{s}!{RESET}"
+        smile_msg = f"{RED_MSG}{BLINK}{BOLD}  \U0001f4f7 SMILE IN {photo_countdown} second{s}!{RESET}"
         print(_box_row(smile_msg, W))
     if not gain_supported:
         print(_box_row(
@@ -1583,7 +1584,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         )
         if recent_adjust:
             action_txt = gain_action
-            msg_color = f"{RED}{BOLD}"
+            msg_color = f"{RED_MSG}{BOLD}"
         else:
             action_txt = gain_action if gain_action else "(idle)"
             msg_color = AMBER
