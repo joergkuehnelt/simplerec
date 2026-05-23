@@ -15,7 +15,6 @@ import signal
 import termios
 import threading
 import subprocess
-import tempfile
 import datetime as dt
 import asyncio
 import re
@@ -60,8 +59,7 @@ PEAK_HOLD_SECONDS = 1.2
 CLIP_HOLD_SECONDS = 2.0
 CLIP_THRESHOLD = 0.995
 # Level-meter warning threshold (must match bar_color zones)
-LEVEL_CLIP_DB   = -3.0   # dBFS – effectively clipping (→ red)
-LEVEL_CLIP_LINEAR = 0.7079  # 10**(-3/20) – linear peak threshold for banner
+LEVEL_CLIP_LINEAR = 0.7079  # 10**(-3/20) ≈ -3 dBFS – linear peak threshold for banner
 AUTO_GAIN_TARGET        = 80    # % – default target when signal is weak
 AUTO_GAIN_BOOST         = 100   # % – target when signal is very weak
 AUTO_GAIN_STEP_DOWN     = 20    # % – step subtracted when clipping danger
@@ -1454,10 +1452,7 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         mode = state.mode
         rms_l, rms_r = state.latest_rms_lr
         peak_l, peak_r = state.latest_peak_lr
-        prev_l, prev_r = state.preview_peak_lr
         hold_l, hold_r = state.peak_hold_db_lr
-        start_wall = state.segment_start_wall
-        pending_conversions = state.convert_q.qsize()
         clip_active = time.monotonic() < state.clip_hold_until
         clip_count = state.clip_count
         gain_action = state.gain_last_action
@@ -1465,8 +1460,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         gain_history = list(state.gain_history)
         gain_current = state.gain_current_pct
         auto_gain_on = state.auto_gain_enabled
-        outdir = state.output_dir
-        seg_dir = state.segment_dir
         channels = state.channels
         song_title = state.songrec_current_title
         song_artist = state.songrec_current_artist
@@ -1477,7 +1470,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         song_genre = state.songrec_current_genre
         song_album = state.songrec_current_album
         song_year  = state.songrec_current_year
-        playlist_only = state.playlist_only
         max_record_seconds = state.max_record_seconds
         session_start_mono = state.session_start_monotonic
         photo_enabled  = state.photo_enabled
