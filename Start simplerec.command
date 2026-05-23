@@ -32,16 +32,18 @@ read -r _x
 rm -f "$RUNNER"
 RUNNER_EOF
     chmod +x "$RUNNER"
-    # "using terms from" forces the AppleScript compiler to use iTerm2's own
-    # dictionary, preventing 'window' from being parsed as a Standard Suite
-    # class name rather than iTerm2's 'create window' command keyword.
+    # Use standard AppleScript 'make new window' (avoids the -2741 error caused
+    # by 'create window' — 'window' after 'new' is valid class syntax, while
+    # 'window' after 'create' is incorrectly parsed as a Standard Suite class).
+    # Then 'write text' sends the command as if typed at the prompt.
     if osascript <<APPLESCRIPT
-using terms from application "iTerm2"
-    tell application "iTerm2"
-        activate
-        create window with default profile command "bash $RUNNER"
+tell application "iTerm2"
+    activate
+    set newWin to (make new window)
+    tell current session of newWin
+        write text "bash $RUNNER"
     end tell
-end using terms from
+end tell
 APPLESCRIPT
     then
         exit 0  # iTerm2 launched — Terminal closes this window on clean exit
