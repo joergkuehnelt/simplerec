@@ -32,20 +32,38 @@ read -r _x
 rm -f "$RUNNER"
 RUNNER_EOF
     chmod +x "$RUNNER"
+
+    # Detect whether iTerm2 is already running BEFORE we activate it.
+    # When iTerm2 is NOT running, `tell application to activate` launches it and
+    # it opens its own default window automatically.  Sending Cmd+N at that point
+    # would open a SECOND window — the extra empty window the user sees.
+    # When iTerm2 IS already running, we DO need Cmd+N to get a fresh window.
+    _iterm_already_open=false
+    pgrep -x "iTerm2" > /dev/null 2>&1 && _iterm_already_open=true
+
     # Avoid ALL iTerm2-specific AppleScript (its dictionary causes -2741 errors).
-    # Instead: activate the app by path, open a new window via Cmd+N keystroke,
-    # then type the command using System Events — no app dictionary needed.
+    # Instead: activate the app by path, conditionally open a new window via
+    # Cmd+N (only when iTerm2 was already running), then type the command using
+    # System Events — no app dictionary needed.
     if osascript <<APPLESCRIPT
 tell application "$_iterm_app"
     activate
 end tell
-delay 0.8
-tell application "System Events"
-    tell process "iTerm2"
-        keystroke "n" using {command down}
+-- Only open a new window when iTerm2 was already running.
+-- If we just launched it, it already opened its default window; pressing Cmd+N
+-- here would produce the unwanted second empty window.
+if "$_iterm_already_open" is "true" then
+    delay 0.8
+    tell application "System Events"
+        tell process "iTerm2"
+            keystroke "n" using {command down}
+        end tell
     end tell
-end tell
-delay 1.5
+    delay 1.2
+else
+    -- freshly launched — wait longer for the default window to become ready
+    delay 2.5
+end if
 tell application "System Events"
     tell process "iTerm2"
         keystroke "bash $RUNNER"
