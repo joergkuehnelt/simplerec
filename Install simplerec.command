@@ -160,16 +160,24 @@ read -r _x
 rm -f "$RUNNER"
 RUNNER_EOF
     chmod +x "$RUNNER"
-    # Use standard AppleScript 'make new window' (avoids the -2741 error caused
-    # by 'create window' — 'window' after 'new' is valid class syntax, while
-    # 'window' after 'create' is incorrectly parsed as a Standard Suite class).
-    # Then 'write text' sends the command as if typed at the prompt.
+    # Avoid ALL iTerm2-specific AppleScript (its dictionary causes -2741 errors).
+    # Instead: activate the app by path, open a new window via Cmd+N keystroke,
+    # then type the command using System Events — no app dictionary needed.
     if osascript <<APPLESCRIPT
-tell application "iTerm2"
+tell application "$_iterm_app"
     activate
-    set newWin to (make new window)
-    tell current session of newWin
-        write text "bash $RUNNER"
+end tell
+delay 0.8
+tell application "System Events"
+    tell process "iTerm2"
+        keystroke "n" using {command down}
+    end tell
+end tell
+delay 1.5
+tell application "System Events"
+    tell process "iTerm2"
+        keystroke "bash $RUNNER"
+        key code 36
     end tell
 end tell
 APPLESCRIPT
