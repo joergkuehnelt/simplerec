@@ -1695,10 +1695,8 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         except OSError:
             term_rows = 40
         top_pad = max(0, (term_rows - n_lines) // 2)
-        sys.stdout.write("\033[2J\033[H")
-        if top_pad > 0:
-            sys.stdout.write("\n" * top_pad)
-        sys.stdout.write(content)
+        # Single write = no blank frame between clear and content.
+        sys.stdout.write("\033[2J\033[H" + "\n" * top_pad + content)
         sys.stdout.flush()
 
 
@@ -1775,7 +1773,7 @@ def main():
         # a mouse click scrolls back to it, making the display appear to scroll.
         _alt_screen = bool(os.environ.get("ITERM_SESSION_ID"))
         if _alt_screen:
-            sys.stdout.write("\033[?1049h")
+            sys.stdout.write("\033[?1049h\033[?25l")  # alt screen + hide cursor
             sys.stdout.flush()
 
         with KeyReader() as keys:
@@ -1894,7 +1892,7 @@ def main():
             pass
         print("Done.")
         if _alt_screen:
-            sys.stdout.write("\033[?1049l")  # restore normal screen
+            sys.stdout.write("\033[?25h\033[?1049l")  # show cursor + restore normal screen
             sys.stdout.flush()
         if _caffeinate is not None:
             _caffeinate.terminate()
