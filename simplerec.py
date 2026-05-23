@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import io
 import os
 import sys
 import math
@@ -1516,19 +1515,12 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
     except OSError:
         _term_cols = W
     PAD = " " * max(0, (_term_cols - W) // 2)
-    _in_iterm = bool(os.environ.get("ITERM_SESSION_ID"))
-    _vbuf: io.StringIO | None = io.StringIO() if _in_iterm else None
 
     def print(s="", **kw):  # shadow builtin: prefix every line with left-padding  # noqa: A001
         import builtins
-        line = PAD + s if s else ""
-        if _vbuf is not None:
-            _vbuf.write(line + kw.get("end", "\n"))
-        else:
-            builtins.print(line, **kw)
+        builtins.print(PAD + s if s else "", **kw)
 
-    if not _in_iterm:
-        clear_screen()
+    clear_screen()
 
     # ── Header ──────────────────────────────────────────────────────────────
     print(f"{AMBER}{BOLD}  SIMPLEREC  v{VERSION}{RESET}")
@@ -1685,19 +1677,6 @@ def render_ui(state: RecorderState, device_name: str, preview_end: Optional[floa
         )
     pad3 = " " * max(0, W - _visible_len(bar3))
     print(f"{BG_AMBER}{FG_BLACK}{bar3}{pad3}{RESET}")
-
-    # Flush vertical-centering buffer (iTerm2 only)
-    if _vbuf is not None:
-        content = _vbuf.getvalue()
-        n_lines = content.count("\n")
-        try:
-            term_rows = os.get_terminal_size().lines
-        except OSError:
-            term_rows = 40
-        top_pad = max(0, (term_rows - n_lines) // 2)
-        # Single write = no blank frame between clear and content.
-        sys.stdout.write("\033[2J\033[H" + "\n" * top_pad + content)
-        sys.stdout.flush()
 
 
 def main():
