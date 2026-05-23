@@ -1418,6 +1418,11 @@ def _render_gain_grid(history, now: float, cols: int = 50, rows: int = 5) -> lis
 
 def _position_terminal_left() -> None:
     """Enter fullscreen mode in the current terminal window (best-effort)."""
+    # Skip inside iTerm2: the keystroke targets whichever app is frontmost at
+    # that moment (often Terminal.app, not iTerm2) and triggers a window resize
+    # that causes the TUI to double-render when the iTerm2 window is clicked.
+    if os.environ.get("ITERM_SESSION_ID"):
+        return
     script = '''
 tell application "System Events"
     keystroke "f" using {command down, control down}
