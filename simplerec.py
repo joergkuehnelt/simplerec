@@ -1756,11 +1756,8 @@ def main():
             sys.stdout.write(
                 "\033[?1049h"   # alternate screen buffer
                 "\033[?25l"     # hide cursor
-                "\033[?1000l"   # disable X10 mouse reporting
-                "\033[?1002l"   # disable button-event mouse tracking
-                "\033[?1003l"   # disable all-motion mouse tracking
-                "\033[?1006l"   # disable SGR mouse mode
-                "\033[?1015l"   # disable URXVT mouse mode
+                "\033[?1000h"   # ENABLE mouse reporting: app receives all clicks/scroll
+                "\033[?1006h"   # ENABLE SGR extended coordinates (needed for large terminals)
                 "\033[?1004l"   # disable focus-in/out events
             )
             sys.stdout.flush()
@@ -1881,7 +1878,12 @@ def main():
             pass
         print("Done.")
         if _alt_screen:
-            sys.stdout.write("\033[?25h\033[?1049l")  # show cursor + restore normal screen
+            sys.stdout.write(
+                "\033[?1000l"   # disable mouse reporting
+                "\033[?1006l"   # disable SGR mode
+                "\033[?25h"     # show cursor
+                "\033[?1049l"   # restore normal screen
+            )
             sys.stdout.flush()
         if _caffeinate is not None:
             _caffeinate.terminate()
