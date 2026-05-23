@@ -51,16 +51,21 @@ if [[ ! -d "$EXTRACTED" ]]; then
 fi
 success "Extracted."
 
-# ── 3. Copy files into current folder ────────────────────────────────────────
-info "Updating files in: $SCRIPT_DIR …"
-# Copy everything from the extracted folder, overwriting existing files.
-# -a preserves permissions; rsync handles the copy cleanly.
+# ── 3. Clean old app files, then copy fresh from download ────────────────────
+info "Removing old app files from: $SCRIPT_DIR …"
+# Delete known app file types so files renamed or removed in the new release
+# don't linger. User data (recordings, photos, playlists) lives in a separate
+# output folder and is not touched.
+find "$SCRIPT_DIR" -maxdepth 1 \( -name "*.py" -o -name "*.command" -o -name "*.md" \) -delete
+success "Old files removed."
+
+info "Installing fresh files into: $SCRIPT_DIR …"
 if command -v rsync &>/dev/null; then
     rsync -a --exclude='.git' "$EXTRACTED/" "$SCRIPT_DIR/"
 else
     cp -R "$EXTRACTED/." "$SCRIPT_DIR/"
 fi
-success "Files updated."
+success "Files installed."
 
 # ── 4. Make .command files executable ────────────────────────────────────────
 chmod +x "$SCRIPT_DIR/"*.command 2>/dev/null || true
