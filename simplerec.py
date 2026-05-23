@@ -785,6 +785,11 @@ class RecorderState:
                         self.songrec_last_check = dt.datetime.now()
                         self.songrec_total_checks += 1
                         self.songrec_status = f"Error: {type(exc).__name__}"
+                        self.songrec_current_title = "-"
+                        self.songrec_current_artist = "-"
+                        self.songrec_current_genre = ""
+                        self.songrec_current_album = ""
+                        self.songrec_current_year  = ""
                     try:
                         self.write_song_status_file()
                     except Exception:
