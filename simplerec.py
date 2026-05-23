@@ -1770,6 +1770,14 @@ def main():
         state.start_photo()
         preview_end = time.monotonic() + PREVIEW_SECONDS
 
+        # Enter alternate screen in iTerm2 so the scrollback buffer stays clean.
+        # Without this, every \033[2J render pushes old content to scrollback and
+        # a mouse click scrolls back to it, making the display appear to scroll.
+        _alt_screen = bool(os.environ.get("ITERM_SESSION_ID"))
+        if _alt_screen:
+            sys.stdout.write("\033[?1049h")
+            sys.stdout.flush()
+
         with KeyReader() as keys:
             while True:
                 render_ui(state, device_name, preview_end if state.mode == "preview" else None)
@@ -1885,6 +1893,9 @@ def main():
         except OSError:
             pass
         print("Done.")
+        if _alt_screen:
+            sys.stdout.write("\033[?1049l")  # restore normal screen
+            sys.stdout.flush()
         if _caffeinate is not None:
             _caffeinate.terminate()
             _caffeinate.wait()
