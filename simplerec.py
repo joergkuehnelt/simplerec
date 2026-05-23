@@ -1758,7 +1758,16 @@ def main():
         # a mouse click scrolls back to it, making the display appear to scroll.
         _alt_screen = bool(os.environ.get("ITERM_SESSION_ID"))
         if _alt_screen:
-            sys.stdout.write("\033[?1049h\033[?25l")  # alt screen + hide cursor
+            sys.stdout.write(
+                "\033[?1049h"   # alternate screen buffer
+                "\033[?25l"     # hide cursor
+                "\033[?1000l"   # disable X10 mouse reporting
+                "\033[?1002l"   # disable button-event mouse tracking
+                "\033[?1003l"   # disable all-motion mouse tracking
+                "\033[?1006l"   # disable SGR mouse mode
+                "\033[?1015l"   # disable URXVT mouse mode
+                "\033[?1004l"   # disable focus-in/out events
+            )
             sys.stdout.flush()
 
         with KeyReader() as keys:
